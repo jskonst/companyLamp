@@ -36,15 +36,14 @@
 #define MQTT_HEADER "GWL:"  // заголовок пакета данных
 
 // ============= БИБЛЫ =============
-#include <GyverPortal.h>
 #include <EEPROM.h>
-#include <ESP8266WiFi.h>
+#include <ESP8266WiFi.h> //Delete
 #include <PubSubClient.h>
-#include <EEManager.h>
 #include <FastLED.h>
 #define EB_STEP 100   // период step шага кнопки
 #include <EncButton.h>
 #include "Timer.h"
+
 
 // ============= ДАННЫЕ =============
 #if 1
@@ -74,8 +73,9 @@ EncButtonT<BTN_PIN, 0, 0> btn;
 CRGB leds[LED_AMOUNT];
 WiFiClient espClient;
 PubSubClient mqtt(espClient);
-GyverPortal portal;
-EEManager memory(data);
+// GyverPortal portal;
+// EEManager memory(data);
+
 bool pirFlag = 0;
 bool winkFlag = 0;
 bool startFlag = 0;
@@ -93,10 +93,10 @@ void loop() {
   if (USE_PIR && digitalRead(PIR_PIN)) pirFlag = 1;  // опрос ИК датчика
   
   heartbeat();    // отправляем пакет что мы онлайн
-  memory.tick();  // проверяем обновление настроек
+  // memory.tick();  // проверяем обновление настроек
   animation();    // эффект ленты
   buttonTick();   // действия кнопки
   mqttTick();     // проверяем входящие
-  portal.tick();  // пинаем портал
-  checkPortal();  // проверяем действия
+  // portal.tick();  // пинаем портал
+  // checkPortal();  // проверяем действия
 }

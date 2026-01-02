@@ -60,23 +60,23 @@ void animation() {
 }
 
 // локальный запуск портала. При любом исходе заканчивается ресетом платы
-void localPortal(IPAddress ip) {
-  // создаём точку с именем WLamp и предыдущим успешным IP
-  Serial.println(F("Create AP"));
-  WiFi.mode(WIFI_AP);
-  String s(F("WLamp "));
-  s += ip.toString();
-  WiFi.softAP(s);
+// void localPortal(IPAddress ip) {
+//   // создаём точку с именем WLamp и предыдущим успешным IP
+//   Serial.println(F("Create AP"));
+//   WiFi.mode(WIFI_AP);
+//   String s(F("WLamp "));
+//   s += ip.toString();
+//   WiFi.softAP(s);
 
-  portal.start("WLamp");    // запускаем портал
-  while (portal.tick()) {   // портал работает
-    loadAnimation(CRGB::Blue);      // мигаем синим
-    btn.tick();
-    // если нажали сохранить настройки или кликнули по кнопке
-    // перезагружаем ESP
-    if (checkPortal() || btn.click()) ESP.reset();
-  }
-}
+//   portal.start("WLamp");    // запускаем портал
+//   while (portal.tick()) {   // портал работает
+//     loadAnimation(CRGB::Blue);      // мигаем синим
+//     btn.tick();
+//     // если нажали сохранить настройки или кликнули по кнопке
+//     // перезагружаем ESP
+//     if (checkPortal() || btn.click()) ESP.reset();
+//   }
+// }
 
 
 // анимация работы локал портала
