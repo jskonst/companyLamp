@@ -43,6 +43,7 @@
 #define EB_STEP 100   // период step шага кнопки
 #include <EncButton.h>
 #include "Timer.h"
+#include "sets.h"
 
 
 // ============= ДАННЫЕ =============
@@ -86,17 +87,79 @@ Timer pirTmr(60000, false);     // 1 минута таймаут пира
 Timer hbTmr(8000);              // 8 секунд период отправки пакета
 
 void setup() {
-  startup();      // запускаем всё
+  delay(1000);
+  Serial.begin(115200);         // запускаем сериал для отладки
+
+  // Вынести в функцию настройки
+  FastLED.addLeds<WS2812B, LED_PIN, GRB>(leds, LED_AMOUNT).setCorrection(TypicalLEDStrip);
+  FastLED.setBrightness(50);
+  FastLED.show();
+
+  // настраиваем уровень кнопки
+  btn.setButtonLevel(BTN_LEVEL);
+
+  // таймер на 2 секунды перед подключением,
+  // чтобы юзер успел кликнуть если надо
+  Timer tmr(2000);
+  while (!tmr.period()) {
+    loadAnimation(CRGB::Green);    // анимация подключения
+    btn.tick();
+    // if (btn.click()) localPortal(ip); // клик - запускаем портал
+    // дальше код не пойдёт, уйдем в перезагрузку
+  }
+
+  // // юзер не кликнул, пытаемся подключиться к точке
+  // Serial.println("Connecting...");
+  // WiFi.mode(WIFI_STA);
+  // WiFi.begin(data.ssid, data.pass);
+  
+  // tmr.setPeriod(15000);
+  // tmr.restart();
+
+  // while (WiFi.status() != WL_CONNECTED) {
+  //   loadAnimation(CRGB::Green);      // анимация подключения
+  //   btn.tick();
+  //   // если клик по кнопке или вышел таймаут
+  //   if (btn.click() || tmr.period()) {
+  //     WiFi.disconnect();  // отключаемся
+  //     localPortal(ip);    // открываем портал
+  //     // дальше код не пойдёт, уйдем в перезагрузку
+  //   }
+  // }
+
+  FastLED.clear();
+  FastLED.show();
+
+  // Serial.print(F("Connected! IP: "));
+  // Serial.println(WiFi.localIP());
+
+  // // переписываем удачный IP себе в память
+  // if (ip != WiFi.localIP()) {
+  //   ip = WiFi.localIP();
+  //   for (int i = 0; i < 4; i++) data.ip[i] = ip[i];
+  //   memory.update();
+  // }
+
+  // стартуем вебсокет
+  // mqtt.setServer(data.host, data.port);
+  // mqtt.setCallback(callback);
+  
+  
+  randomSeed(micros());
+
+  sett_begin();
+  FastLED.setBrightness(db[kk::bright]);
 }
 
 void loop() {
   if (USE_PIR && digitalRead(PIR_PIN)) pirFlag = 1;  // опрос ИК датчика
   
-  heartbeat();    // отправляем пакет что мы онлайн
-  // memory.tick();  // проверяем обновление настроек
-  animation();    // эффект ленты
-  buttonTick();   // действия кнопки
-  mqttTick();     // проверяем входящие
+  // heartbeat();    // отправляем пакет что мы онлайн
+  // // memory.tick();  // проверяем обновление настроек
+  // animation();    // эффект ленты
+  // buttonTick();   // действия кнопки
+  // mqttTick();     // проверяем входящие
   // portal.tick();  // пинаем портал
   // checkPortal();  // проверяем действия
+   sett_loop();
 }
