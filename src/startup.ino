@@ -61,12 +61,12 @@ void startup() {
   // }
 
   // стартуем вебсокет
-  mqtt.setServer(data.host, data.port);
-  mqtt.setCallback(callback);
+  // mqtt.setServer(((String)db[kk::host]).c_str(), (uint16_t)((String)db[kk::port]).toInt());
+  // mqtt.setCallback(callback);
   randomSeed(micros());
 
   // стартуем портал
   // portal.start();
 
-  FastLED.setBrightness(data.bright);
+  FastLED.setBrightness((uint8_t)db[kk::bright]);
 }

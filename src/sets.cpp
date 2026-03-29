@@ -5,6 +5,7 @@
 
 GyverDBFile db(&LittleFS, "/data.db");
 SettingsGyver sett(PROJECT_NAME, &db);
+static bool settings_started = false;
 
 // ========== build ==========
 static void build(sets::Builder& b) {
@@ -19,6 +20,7 @@ static void build(sets::Builder& b) {
         b.Input(kk::ip, "IP", "0.0.0.0");
         b.Switch(kk::power, "Питание");
         b.Slider(kk::bright, "Яркость", 0,100,1);
+        
         if (b.Switch(kk::close_ap, "Закрывать AP")) {   
             WiFiConnector.closeAP(db[kk::close_ap]);
         }
@@ -34,6 +36,8 @@ static void update(sets::Updater& u) {
 
 // ========== begin ==========
 void sett_begin() {
+    if (settings_started) return;
+
     // fs
 #ifdef ESP32
     LittleFS.begin(true);
@@ -53,6 +57,7 @@ void sett_begin() {
     db.init(kk::ip, "0.0.0.0");
     db.init(kk::power, 0);
     db.init(kk::bright, 20);
+    db.init(kk::color, 0);
     
 
     // wifi
@@ -74,10 +79,63 @@ void sett_begin() {
     sett.begin();
     sett.onBuild(build);
     sett.onUpdate(update);
+
+    settings_started = true;
 }
 
 // ========== loop ==========
 void sett_loop() {
+    if (!settings_started) return;
     WiFiConnector.tick();
     sett.tick();
 }
+
+bool sett_started() {
+    return settings_started;
+}
+
+namespace cfg {
+uint8_t bright() {
+    return (uint8_t)db[kk::bright];
+}
+
+bool power() {
+    return (bool)db[kk::power];
+}
+
+uint8_t color() {
+    return (uint8_t)db[kk::color];
+}
+
+String ssid() {
+    return String(db[kk::ssid]);
+}
+
+String pass() {
+    return String(db[kk::pass]);
+}
+
+String local() {
+    return String(db[kk::local]);
+}
+
+String remote() {
+    return String(db[kk::remote]);
+}
+
+String host() {
+    return String(db[kk::host]);
+}
+
+uint16_t port() {
+    return (uint16_t)String(db[kk::port]).toInt();
+}
+
+String ip() {
+    return String(db[kk::ip]);
+}
+
+bool close_ap() {
+    return (bool)db[kk::close_ap];
+}
+}  // namespace cfg

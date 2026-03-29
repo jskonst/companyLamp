@@ -8,7 +8,7 @@
   1.0 - релиз
 */
 
-#define LED_PIN 14    // пин ленты
+#define LED_PIN 5    // пин ленты
 #define BTN_PIN 16    // пин кнопки
 #define PIR_PIN D5    // пин PIR (ИК датчика)
 #define LED_AMOUNT 24 // кол-вл светодиодов
@@ -39,6 +39,7 @@
 #include <EEPROM.h>
 #include <ESP8266WiFi.h> //Delete
 #include <PubSubClient.h>
+#define FASTLED_ALLOW_INTERRUPTS 0
 #include <FastLED.h>
 #define EB_STEP 100   // период step шага кнопки
 #include <EncButton.h>
@@ -55,27 +56,10 @@
 #define DEBUGLN(x)
 #endif
 
-struct LampData {
-  char ssid[32] = "";
-  char pass[32] = "";
-  char local[20] = "AG_lamp_1";
-  char remote[20] = "AG_lamp_2";
-  char host[32] = "broker.mqttdashboard.com";
-  uint16_t port = 1883;
-  uint8_t ip[4] = {0, 0, 0, 0};
-
-  bool power = 1;
-  uint8_t bright = 50;
-  uint8_t color = 0;
-};
-
-LampData data;
 EncButtonT<BTN_PIN, 0, 0> btn;
 CRGB leds[LED_AMOUNT];
 WiFiClient espClient;
 PubSubClient mqtt(espClient);
-// GyverPortal portal;
-// EEManager memory(data);
 
 bool pirFlag = 0;
 bool winkFlag = 0;
@@ -89,11 +73,16 @@ Timer hbTmr(8000);              // 8 секунд период отправки 
 void setup() {
   delay(1000);
   Serial.begin(115200);         // запускаем сериал для отладки
+  Serial.println("\n\nStarting WebLamp...");
 
   // Вынести в функцию настройки
+  Serial.println("Initializing FastLED on GPIO5...");
   FastLED.addLeds<WS2812B, LED_PIN, GRB>(leds, LED_AMOUNT).setCorrection(TypicalLEDStrip);
+  FastLED.setDither(0);
   FastLED.setBrightness(50);
-  FastLED.show();
+  fill_solid(leds, LED_AMOUNT, CRGB::Green);  // заполняем зелёным
+  FastLED.show();  // показываем статус
+  Serial.println("LEDs initialized - should be GREEN now!");
 
   // настраиваем уровень кнопки
   btn.setButtonLevel(BTN_LEVEL);
@@ -127,9 +116,13 @@ void setup() {
   //   }
   // }
 
-  FastLED.clear();
+  // Явно отправляем "чёрный" кадр после стартовой анимации:
+  // у некоторых WS2812 первый диод может держать артефакт без жёсткого сброса.
+  fill_solid(leds, LED_AMOUNT, CRGB::Black);
   FastLED.show();
-
+  delay(2);
+  FastLED.show();
+  delay(500);
   // Serial.print(F("Connected! IP: "));
   // Serial.println(WiFi.localIP());
 
@@ -145,10 +138,39 @@ void setup() {
   // mqtt.setCallback(callback);
   
   
-  randomSeed(micros());
+  // randomSeed(micros());
 
-  sett_begin();
-  FastLED.setBrightness(db[kk::bright]);
+  // sett_begin();
+
+  // Буфер между зелёной анимацией и белыми вспышками,
+  // чтобы убрать переходный артефакт.
+  for (int p = 0; p < LED_AMOUNT; p++) leds[p] = CRGB::Black;
+  FastLED.show();
+  delay(2);
+  FastLED.show();
+  delay(200);
+  
+  // Мигаем при запуске с полной яркостью
+  FastLED.setBrightness(100);
+  for (int i = 0; i < 3; i++) {
+    for (int p = 0; p < LED_AMOUNT; p++) leds[p] = CRGB::Black;
+    FastLED.show();
+    delay(2);
+    FastLED.show();
+    delay(800);
+    for (int p = 0; p < LED_AMOUNT; p++) leds[p] = CRGB::White;
+    FastLED.show();
+    delay(2);
+    FastLED.show();
+    delay(800);
+  }
+  for (int p = 0; p < LED_AMOUNT; p++) leds[p] = CRGB::Black;
+  FastLED.show();
+  delay(2);
+  FastLED.show();
+  
+  // Конфигурация читается только через слой Settings/GyverDB.
+  FastLED.setBrightness(sett_started() ? cfg::bright() : 50);
 }
 
 void loop() {
@@ -163,3 +185,4 @@ void loop() {
   // checkPortal();  // проверяем действия
    sett_loop();
 }
+
