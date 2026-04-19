@@ -42,4 +42,5 @@ bool checkPortal() {
   //   }
   // }
   // return 0;
+  return false;
 }

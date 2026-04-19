@@ -15,8 +15,8 @@ void startup() {
   FastLED.setBrightness(50);
   FastLED.show();
 
-  // настраиваем уровень кнопки
-  btn.setButtonLevel(BTN_LEVEL);
+  // настраиваем вход кнопки и активный уровень
+  btn.init(BTN_PIN_MODE, BTN_LEVEL);
 
   // таймер на 2 секунды перед подключением,
   // чтобы юзер успел кликнуть если надо

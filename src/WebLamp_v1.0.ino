@@ -1,62 +1,49 @@
 /*
-  Скетч к проекту "WebLamp"
-  - Страница проекта (схемы, описания): https://alexgyver.ru/weblamp/
-  - Исходники на GitHub: https://github.com/AlexGyver/WebLamp
-  Проблемы с загрузкой? Читай гайд для новичков: https://alexgyver.ru/arduino-first/
-  AlexGyver, AlexGyver Technologies, 2022
-
-  1.0 - релиз
+  WebLamp (cleaned build)
 */
 
-#define LED_PIN 5    // пин ленты
-#define BTN_PIN 16    // пин кнопки
-#define PIR_PIN D5    // пин PIR (ИК датчика)
-#define LED_AMOUNT 24 // кол-вл светодиодов
-#define BTN_LEVEL 1   // 1 - кнопка подключает VCC, 0 - подключает GND
-#define USE_PIR 0     // 1 - использовать PIR (ИК датчик) на этой лампе
-#define IGNORE_PIR 0  // 1 - игнорировать сигнал PIR (ИК датчика) с удалённой лампы
+#define LED_PIN 5          // strip data pin (D1 / GPIO5)
+#define BTN_PIN 14         // button pin (D5 / GPIO14)
+#define PIR_PIN D6         // PIR pin (GPIO12)
+#define LED_AMOUNT 24      // number of LEDs
+#define BTN_LEVEL 1        // 1: button to VCC, 0: button to GND
+#define SERIAL_BTN_TEST 0  // 1: enable Serial simulation in buttonSerialTestTick()
+#define WIFI_SLEEP_CFG WIFI_MODEM_SLEEP  // WIFI_NONE_SLEEP / WIFI_MODEM_SLEEP / WIFI_LIGHT_SLEEP
+#define BTN_CLICK_TIMEOUT 650            // ms window for multi-click detection
+#define BTN_DEBOUNCE_TIME 25             // ms debounce for mechanical button
+#define USE_PIR 0
+#define IGNORE_PIR 0
 
-/*
-  Запуск:
-  Клик или >15 секунд при анимации подклчения: запустить точку доступа
-  Кнопка сохранить или клик: перезагрузить систему
+#define MQTT_HEADER "GWL:"
 
-  Анимация:
-  - Мигает зелёным: подключение к роутеру
-  - Мигает синим: запущена точка доступа WLamp <IP>
-
-  Работа:
-  1 клик: вкл/выкл
-  2 клика: сменить цвет
-  3 клика: подмигнуть
-  Удержание: сменить яркость
-*/
-
-// ============= ВСЯКОЕ =============
-#define MQTT_HEADER "GWL:"  // заголовок пакета данных
-
-// ============= БИБЛЫ =============
 #include <EEPROM.h>
-#include <ESP8266WiFi.h> //Delete
+#include <ESP8266WiFi.h>
 #include <PubSubClient.h>
-#define FASTLED_ALLOW_INTERRUPTS 0
-#include <FastLED.h>
-#define EB_STEP 100   // период step шага кнопки
+#include "led_driver.h"
+#define EB_STEP_TIME 100
 #include <EncButton.h>
 #include "Timer.h"
 #include "sets.h"
 
-
-// ============= ДАННЫЕ =============
-#if 1
-#define DEBUG(x) Serial.print(x)
-#define DEBUGLN(x) Serial.println(x)
+#define DEBUG_ENABLE 1
+#if DEBUG_ENABLE
+  #define DEBUG(x) Serial.print(x)
+  #define DEBUGLN(x) Serial.println(x)
 #else
-#define DEBUG(x)
-#define DEBUGLN(x)
+  #define DEBUG(x)
+  #define DEBUGLN(x)
 #endif
 
-EncButtonT<BTN_PIN, 0, 0> btn;
+// GPIO16 on ESP8266 supports dedicated pulldown mode.
+// For BTN_LEVEL=1 (button to VCC) this keeps input stable without external resistor.
+#if (BTN_PIN == 16) && (BTN_LEVEL == 1)
+constexpr uint8_t BTN_PIN_MODE = INPUT_PULLDOWN_16;
+#elif (BTN_LEVEL == 0)
+constexpr uint8_t BTN_PIN_MODE = INPUT_PULLUP;
+#else
+constexpr uint8_t BTN_PIN_MODE = INPUT;
+#endif
+ButtonT<BTN_PIN> btn(BTN_PIN_MODE, BTN_LEVEL);
 CRGB leds[LED_AMOUNT];
 WiFiClient espClient;
 PubSubClient mqtt(espClient);
@@ -64,93 +51,97 @@ PubSubClient mqtt(espClient);
 bool pirFlag = 0;
 bool winkFlag = 0;
 bool startFlag = 0;
+bool serialVisualOverride = false;
+uint32_t serialVisualOverrideUntil = 0;
 const uint8_t hLen = strlen(MQTT_HEADER);
 
-Timer onlineTmr(18000, false);  // 18 секунд таймаут онлайна
-Timer pirTmr(60000, false);     // 1 минута таймаут пира
-Timer hbTmr(8000);              // 8 секунд период отправки пакета
+Timer onlineTmr(18000, false);
+Timer pirTmr(60000, false);
+Timer hbTmr(8000);
+
+void showLedsSafe() {
+  noInterrupts();
+  FastLED.show();
+  interrupts();
+}
+
+void applyLampState() {
+  static bool initialized = false;
+  static bool lastPower = false;
+  static uint8_t lastBright = 0;
+  static uint8_t lastColor = 255;
+
+  bool power = sett_started() ? cfg::power() : true;
+  uint8_t bright = sett_started() ? cfg::bright() : 20;
+  uint8_t color = sett_started() ? cfg::color() : 0;
+
+  if (initialized && power == lastPower && bright == lastBright && color == lastColor) return;
+
+  lastPower = power;
+  lastBright = bright;
+  lastColor = color;
+  initialized = true;
+
+  CRGB c;
+  if (!power) c = CRGB::Black;
+  else if (color == 0) c = CRGB::White;
+  else c = CHSV(color, 255, 255);
+
+  fill_solid(leds, LED_AMOUNT, c);
+  if (!power) {
+    FastLED.setBrightness(0);
+    showLedsSafe();
+    delayMicroseconds(80);
+    showLedsSafe();
+  } else {
+    FastLED.setBrightness(map(bright, 0, 100, 0, 255));
+    showLedsSafe();
+  }
+}
 
 void setup() {
   delay(1000);
-  Serial.begin(115200);         // запускаем сериал для отладки
+  Serial.begin(115200);
   Serial.println("\n\nStarting WebLamp...");
 
-  // Вынести в функцию настройки
-  Serial.println("Initializing FastLED on GPIO5...");
-  FastLED.addLeds<WS2812B, LED_PIN, GRB>(leds, LED_AMOUNT).setCorrection(TypicalLEDStrip);
+  Serial.printf("Initializing NeoPixelBus on GPIO%d...\n", LED_PIN);
+  FastLED.addLeds<NEOPIXEL, LED_PIN>(leds, LED_AMOUNT).setCorrection(UncorrectedColor);
   FastLED.setDither(0);
   FastLED.setBrightness(50);
-  fill_solid(leds, LED_AMOUNT, CRGB::Green);  // заполняем зелёным
-  FastLED.show();  // показываем статус
+  fill_solid(leds, LED_AMOUNT, CRGB::Green);
+  FastLED.show();
   Serial.println("LEDs initialized - should be GREEN now!");
 
-  // настраиваем уровень кнопки
-  btn.setButtonLevel(BTN_LEVEL);
+  btn.init(BTN_PIN_MODE, BTN_LEVEL);
+  btn.setClickTimeout(BTN_CLICK_TIMEOUT);
+  btn.setDebTimeout(BTN_DEBOUNCE_TIME);
+#if SERIAL_BTN_TEST
+  Serial.println(F("Serial test: 1/2/3 click, +/- brightness, p toggle, r/g/w/k/t visual"));
+#endif
 
-  // таймер на 2 секунды перед подключением,
-  // чтобы юзер успел кликнуть если надо
   Timer tmr(2000);
   while (!tmr.period()) {
-    loadAnimation(CRGB::Green);    // анимация подключения
+    loadAnimation(CRGB::Green);
     btn.tick();
-    // if (btn.click()) localPortal(ip); // клик - запускаем портал
-    // дальше код не пойдёт, уйдем в перезагрузку
   }
 
-  // // юзер не кликнул, пытаемся подключиться к точке
-  // Serial.println("Connecting...");
-  // WiFi.mode(WIFI_STA);
-  // WiFi.begin(data.ssid, data.pass);
-  
-  // tmr.setPeriod(15000);
-  // tmr.restart();
-
-  // while (WiFi.status() != WL_CONNECTED) {
-  //   loadAnimation(CRGB::Green);      // анимация подключения
-  //   btn.tick();
-  //   // если клик по кнопке или вышел таймаут
-  //   if (btn.click() || tmr.period()) {
-  //     WiFi.disconnect();  // отключаемся
-  //     localPortal(ip);    // открываем портал
-  //     // дальше код не пойдёт, уйдем в перезагрузку
-  //   }
-  // }
-
-  // Явно отправляем "чёрный" кадр после стартовой анимации:
-  // у некоторых WS2812 первый диод может держать артефакт без жёсткого сброса.
   fill_solid(leds, LED_AMOUNT, CRGB::Black);
   FastLED.show();
   delay(2);
   FastLED.show();
   delay(500);
-  // Serial.print(F("Connected! IP: "));
-  // Serial.println(WiFi.localIP());
 
-  // // переписываем удачный IP себе в память
-  // if (ip != WiFi.localIP()) {
-  //   ip = WiFi.localIP();
-  //   for (int i = 0; i < 4; i++) data.ip[i] = ip[i];
-  //   memory.update();
-  // }
+  sett_begin();
+  WiFi.setSleepMode(WIFI_SLEEP_CFG);
+  DEBUG(F("WiFi sleep mode: "));
+  DEBUGLN((int)WIFI_SLEEP_CFG);
 
-  // стартуем вебсокет
-  // mqtt.setServer(data.host, data.port);
-  // mqtt.setCallback(callback);
-  
-  
-  // randomSeed(micros());
-
-  // sett_begin();
-
-  // Буфер между зелёной анимацией и белыми вспышками,
-  // чтобы убрать переходный артефакт.
   for (int p = 0; p < LED_AMOUNT; p++) leds[p] = CRGB::Black;
   FastLED.show();
   delay(2);
   FastLED.show();
   delay(200);
-  
-  // Мигаем при запуске с полной яркостью
+
   FastLED.setBrightness(100);
   for (int i = 0; i < 3; i++) {
     for (int p = 0; p < LED_AMOUNT; p++) leds[p] = CRGB::Black;
@@ -168,21 +159,21 @@ void setup() {
   FastLED.show();
   delay(2);
   FastLED.show();
-  
-  // Конфигурация читается только через слой Settings/GyverDB.
-  FastLED.setBrightness(sett_started() ? cfg::bright() : 50);
+
+  applyLampState();
 }
 
 void loop() {
-  if (USE_PIR && digitalRead(PIR_PIN)) pirFlag = 1;  // опрос ИК датчика
-  
-  // heartbeat();    // отправляем пакет что мы онлайн
-  // // memory.tick();  // проверяем обновление настроек
-  // animation();    // эффект ленты
-  // buttonTick();   // действия кнопки
-  // mqttTick();     // проверяем входящие
-  // portal.tick();  // пинаем портал
-  // checkPortal();  // проверяем действия
-   sett_loop();
-}
+  if (USE_PIR && digitalRead(PIR_PIN)) pirFlag = 1;
 
+#if SERIAL_BTN_TEST
+  buttonSerialTestTick();
+#endif
+  buttonTick();
+  sett_loop();
+
+  if (serialVisualOverride && (int32_t)(millis() - serialVisualOverrideUntil) >= 0) {
+    serialVisualOverride = false;
+  }
+  if (!serialVisualOverride) applyLampState();
+}

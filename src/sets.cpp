@@ -7,6 +7,16 @@ GyverDBFile db(&LittleFS, "/data.db");
 SettingsGyver sett(PROJECT_NAME, &db);
 static bool settings_started = false;
 
+static String makeAPName() {
+    String ip = String(db[kk::ip]);
+    if (!ip.length() || ip == "0.0.0.0") return String(PROJECT_NAME);
+
+    String name(PROJECT_NAME);
+    name += ' ';
+    name += ip;
+    return name;
+}
+
 // ========== build ==========
 static void build(sets::Builder& b) {
     {
@@ -62,16 +72,23 @@ void sett_begin() {
 
     // wifi
     WiFiConnector.onConnect([]() {
+        const String ip = WiFi.localIP().toString();
+
         Serial.print("Connected: ");
-        Serial.println(WiFi.localIP());
-        //TODO - save local IP address and show it in name of AP
+        Serial.println(ip);
+
+        if (String(db[kk::ip]) != ip) {
+            db[kk::ip] = ip;
+            db.update();
+        }
+        WiFiConnector.setName(makeAPName());
     });
     WiFiConnector.onError([]() {
         Serial.print("Error. Start AP: ");
         Serial.println(WiFi.softAPIP());
     });
 
-    WiFiConnector.setName(PROJECT_NAME);
+    WiFiConnector.setName(makeAPName());
     WiFiConnector.closeAP(db[kk::close_ap]);
     WiFiConnector.connect(db[kk::ssid], db[kk::pass]);
 
