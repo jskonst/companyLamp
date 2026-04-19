@@ -16,7 +16,6 @@
 
 #define MQTT_HEADER "GWL:"
 
-#include <EEPROM.h>
 #include <ESP8266WiFi.h>
 #include <PubSubClient.h>
 #include "led_driver.h"
@@ -48,22 +47,22 @@ CRGB leds[LED_AMOUNT];
 WiFiClient espClient;
 PubSubClient mqtt(espClient);
 
-bool pirFlag = 0;
-bool startFlag = 0;
 #if SERIAL_BTN_TEST
 bool serialVisualOverride = false;
 uint32_t serialVisualOverrideUntil = 0;
 #endif
-const uint8_t hLen = strlen(MQTT_HEADER);
-
-Timer onlineTmr(18000, false);
-Timer pirTmr(60000, false);
-Timer hbTmr(8000);
 
 void showLedsSafe() {
   noInterrupts();
   FastLED.show();
   interrupts();
+}
+
+static void showBlack() {
+  fill_solid(leds, LED_AMOUNT, CRGB::Black);
+  showLedsSafe();
+  delay(2);
+  showLedsSafe();
 }
 
 void applyLampState() {
@@ -125,10 +124,7 @@ void setup() {
     btn.tick();
   }
 
-  fill_solid(leds, LED_AMOUNT, CRGB::Black);
-  FastLED.show();
-  delay(2);
-  FastLED.show();
+  showBlack();
   delay(500);
 
   sett_begin();
@@ -136,36 +132,23 @@ void setup() {
   DEBUG(F("WiFi sleep mode: "));
   DEBUGLN((int)WIFI_SLEEP_CFG);
 
-  for (int p = 0; p < LED_AMOUNT; p++) leds[p] = CRGB::Black;
-  FastLED.show();
-  delay(2);
-  FastLED.show();
+  showBlack();
   delay(200);
 
   FastLED.setBrightness(100);
   for (int i = 0; i < 3; i++) {
-    for (int p = 0; p < LED_AMOUNT; p++) leds[p] = CRGB::Black;
-    FastLED.show();
-    delay(2);
-    FastLED.show();
+    showBlack();
     delay(800);
-    for (int p = 0; p < LED_AMOUNT; p++) leds[p] = CRGB::White;
-    FastLED.show();
-    delay(2);
-    FastLED.show();
+    fill_solid(leds, LED_AMOUNT, CRGB::White);
+    showLedsSafe();
     delay(800);
   }
-  for (int p = 0; p < LED_AMOUNT; p++) leds[p] = CRGB::Black;
-  FastLED.show();
-  delay(2);
-  FastLED.show();
+  showBlack();
 
   applyLampState();
 }
 
 void loop() {
-  if (USE_PIR && digitalRead(PIR_PIN)) pirFlag = 1;
-
 #if SERIAL_BTN_TEST
   buttonSerialTestTick();
 #endif
