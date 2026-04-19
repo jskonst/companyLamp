@@ -164,6 +164,10 @@ void onPomoDone() {
 
 ## 10.5 Кнопка
 
+Поведение 2 кликов зависит от состояния:
+- **IDLE** → смена базового цвета (+32 по HSV, те же 8 цветов что у лампы)
+- **Все остальные** → пропустить к следующему интервалу
+
 ```cpp
 void pomodoroClick(uint8_t clicks) {
   if (clicks == 1) {
@@ -180,21 +184,25 @@ void pomodoroClick(uint8_t clicks) {
         break;
       case PomoState::PAUSED:
         // продолжить
-        pomoStart += (millis() - pomoPauseAt);  // сдвиг на время паузы
-        pomoState = PomoState::WORK;  // или какой был
+        pomoStart += (millis() - pomoPauseAt);
+        pomoState = PomoState::WORK;
         break;
       case PomoState::DONE:
-        // первое нажатие — стоп мигание
         pomoState = PomoState::CONFIRMED;
         break;
       case PomoState::CONFIRMED:
-        // второе нажатие — старт следующего
         startNextInterval();
         break;
     }
   } else if (clicks == 2) {
-    // пропустить к следующему интервалу
-    startNextInterval();
+    if (pomoState == PomoState::IDLE) {
+      // смена базового цвета — как 2 клика в режиме лампы
+      db[kk::pomo_color] = (uint8_t)(cfg::pomo_color() + 32);
+      db.update();
+    } else {
+      // пропустить к следующему интервалу
+      startNextInterval();
+    }
   }
 }
 ```
@@ -271,7 +279,9 @@ b.Slider(kk::pomo_color, "Цвет работы (DND)", 0, 255, 1);
 ## Проверка
 
 - [ ] Вход в режим POMODORO → кольцо пустое (IDLE)
-- [ ] 1 клик → начало работы, кольцо заполняется оранжевым слева направо
+- [ ] 2 клика в IDLE → цвет кольца меняется (+32), 8 шагов по кругу
+- [ ] Web-слайдер и кнопка меняют один и тот же `pomo_color`
+- [ ] 1 клик → начало работы, кольцо заполняется выбранным цветом слева направо
 - [ ] Прогресс точный: за 25 мин — 24 LED заполнены
 - [ ] По истечению → мигание белым
 - [ ] 1 клик → мигание стоп, секция 2 мигает медленно (CONFIRMED)

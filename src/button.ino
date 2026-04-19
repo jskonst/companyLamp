@@ -1,65 +1,50 @@
+#include "mode.h"
+
 #if SERIAL_BTN_TEST
 extern bool serialVisualOverride;
 extern uint32_t serialVisualOverrideUntil;
-extern void applyLampState();
 extern void showLedsSafe();
 #endif
 
-static void togglePowerSafe() {
-  const bool nextPower = !cfg::power();
-  db[kk::power] = nextPower;
-  // If we are turning on from zero brightness, restore a visible level.
-  if (nextPower && cfg::bright() == 0) {
-    db[kk::bright] = 20;
-  }
-  db.update();
-}
-
 static void handleButtonClicks(uint8_t clicks) {
-  if (clicks == 1) {
-    togglePowerSafe();
-  } else if (clicks == 2) {
-    db[kk::color] = (uint8_t)(cfg::color() + 32);
-    db.update();
-  } else if (clicks == 3) {
-    DEBUGLN(F("[BTN] TODO: next mode"));
-  } else if (clicks >= 4) {
-    DEBUGLN(F("[BTN] TODO: prev mode"));
+  if (clicks >= 5) {
+    meetingQuickCall();
+    return;
+  }
+  if (clicks == 4) {
+    uint8_t prev = ((uint8_t)currentMode() + MODE_COUNT - 1) % MODE_COUNT;
+    setMode((Mode)prev);
+    showModeIndicator((Mode)prev);
+    DEBUG(F("[BTN] mode prev -> ")); DEBUGLN(prev);
+    return;
+  }
+  if (clicks == 3) {
+    uint8_t next = ((uint8_t)currentMode() + 1) % MODE_COUNT;
+    setMode((Mode)next);
+    showModeIndicator((Mode)next);
+    DEBUG(F("[BTN] mode next -> ")); DEBUGLN(next);
+    return;
+  }
+  switch (currentMode()) {
+    case Mode::LAMP:     lampClick(clicks);     break;
+    case Mode::POMODORO: pomodoroClick(clicks); break;
+    case Mode::MOOD:     moodClick(clicks);     break;
+    case Mode::MEETING:  meetingClick(clicks);  break;
+    case Mode::DND:      dndClick(clicks);      break;
   }
 }
-
-#define BTN_MIN_BRIGHT 5
 
 #if SERIAL_BTN_TEST
 void buttonSerialTestTick() {
   while (Serial.available()) {
     const char c = (char)Serial.read();
-    if (c == '1' || c == '2' || c == '3') {
+    if (c == '1' || c == '2' || c == '3' || c == '4' || c == '5') {
       serialVisualOverride = false;
       serialVisualOverrideUntil = 0;
       handleButtonClicks((uint8_t)(c - '0'));
-      applyLampState();
-      Serial.printf("SIM click %c | power=%d bright=%u color=%u\n", c, (int)cfg::power(), (unsigned)cfg::bright(), (unsigned)cfg::color());
-    } else if (c == 'p' || c == 'P') {
-      serialVisualOverride = false;
-      serialVisualOverrideUntil = 0;
-      togglePowerSafe();
-      applyLampState();
-      Serial.printf("SIM power toggle | power=%d bright=%u color=%u\n", (int)cfg::power(), (unsigned)cfg::bright(), (unsigned)cfg::color());
-    } else if (c == '+') {
-      serialVisualOverride = false;
-      serialVisualOverrideUntil = 0;
-      db[kk::bright] = (uint8_t)constrain((int)cfg::bright() + 10, 0, 100);
-      db.update();
-      applyLampState();
-      Serial.printf("SIM bright+ | bright=%u\n", (unsigned)cfg::bright());
-    } else if (c == '-') {
-      serialVisualOverride = false;
-      serialVisualOverrideUntil = 0;
-      db[kk::bright] = (uint8_t)constrain((int)cfg::bright() - 10, BTN_MIN_BRIGHT, 100);
-      db.update();
-      applyLampState();
-      Serial.printf("SIM bright- | bright=%u\n", (unsigned)cfg::bright());
+      renderTick();
+      Serial.printf("SIM click %c | mode=%u power=%d bright=%u color=%u\n",
+        c, (unsigned)currentMode(), (int)cfg::power(), (unsigned)cfg::bright(), (unsigned)cfg::color());
     } else if (c == 'r' || c == 'R') {
       serialVisualOverride = true;
       serialVisualOverrideUntil = millis() + 5000;
@@ -87,7 +72,7 @@ void buttonSerialTestTick() {
       fill_solid(leds, LED_AMOUNT, CRGB::Black);
       FastLED.setBrightness(0);
       showLedsSafe();
-      delayMicroseconds(80);
+      delay(2);
       showLedsSafe();
       Serial.println(F("SIM direct BLACK all LEDs"));
     } else if (c == 't' || c == 'T') {
@@ -118,21 +103,20 @@ void buttonTick() {
     uint8_t clicks = btn.getClicks();
     DEBUG(F("[BTN] click n=")); DEBUGLN(clicks);
     handleButtonClicks(clicks);
-    Serial.printf("[BTN] after: power=%d bright=%u color=%u\n",
-      (int)cfg::power(), (unsigned)cfg::bright(), (unsigned)cfg::color());
   }
 
-  static int8_t dir = 10;
   if (btn.step()) {
-    int newBright = constrain((int)cfg::bright() + dir, BTN_MIN_BRIGHT, 100);
-    db[kk::bright] = (uint8_t)newBright;
-    DEBUG(F("[BTN] step dir=")); DEBUG(dir);
-    DEBUG(F(" bright=")); DEBUGLN(newBright);
+    switch (currentMode()) {
+      case Mode::LAMP: lampStep(); break;
+      case Mode::MOOD: moodStep(); break;
+      default: break;
+    }
   }
   if (btn.releaseStep()) {
-    dir = -dir;
-    db.update();
-    DEBUG(F("[BTN] releaseStep saved bright=")); DEBUG(cfg::bright());
-    DEBUG(F(" nextDir=")); DEBUGLN(dir);
+    switch (currentMode()) {
+      case Mode::LAMP: lampReleaseStep(); break;
+      case Mode::MOOD: moodReleaseStep(); break;
+      default: break;
+    }
   }
 }

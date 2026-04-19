@@ -2,6 +2,8 @@
   WebLamp (cleaned build)
 */
 
+#include "mode.h"          // Mode enum must be visible before auto-generated prototypes
+
 #define LED_PIN 5          // strip data pin (D1 / GPIO5)
 #define BTN_PIN 14         // button pin (D5 / GPIO14)
 #define PIR_PIN D6         // PIR pin (GPIO12)
@@ -102,13 +104,14 @@ void loop() {
 #endif
   buttonTick();
   sett_loop();
+  modeIndicatorTick();
 
 #if SERIAL_BTN_TEST
   if (serialVisualOverride && (int32_t)(millis() - serialVisualOverrideUntil) >= 0) {
     serialVisualOverride = false;
   }
-  if (!serialVisualOverride) applyLampState();
+  if (!serialVisualOverride) renderTick();
 #else
-  applyLampState();
+  renderTick();
 #endif
 }

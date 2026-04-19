@@ -67,6 +67,7 @@ void sett_begin() {
     db.init(kk::power, 0);
     db.init(kk::bright, 20);
     db.init(kk::color, 0);
+    db.init(kk::mode, 0);
     
 
     // wifi

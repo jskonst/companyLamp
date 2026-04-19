@@ -40,5 +40,6 @@ DB_KEYS(
     ip,
     power,
     bright,
-    color
+    color,
+    mode
 );
