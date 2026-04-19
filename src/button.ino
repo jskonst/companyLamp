@@ -1,12 +1,9 @@
+#if SERIAL_BTN_TEST
 extern bool serialVisualOverride;
 extern uint32_t serialVisualOverrideUntil;
 extern void applyLampState();
 extern void showLedsSafe();
-
-static void exitSerialVisualOverride() {
-  serialVisualOverride = false;
-  serialVisualOverrideUntil = 0;
-}
+#endif
 
 static void togglePowerSafe() {
   const bool nextPower = !cfg::power();
@@ -31,28 +28,35 @@ static void handleButtonClicks(uint8_t clicks) {
   }
 }
 
+#define BTN_MIN_BRIGHT 5
+
+#if SERIAL_BTN_TEST
 void buttonSerialTestTick() {
   while (Serial.available()) {
     const char c = (char)Serial.read();
     if (c == '1' || c == '2' || c == '3') {
-      exitSerialVisualOverride();
+      serialVisualOverride = false;
+      serialVisualOverrideUntil = 0;
       handleButtonClicks((uint8_t)(c - '0'));
       applyLampState();
       Serial.printf("SIM click %c | power=%d bright=%u color=%u\n", c, (int)cfg::power(), (unsigned)cfg::bright(), (unsigned)cfg::color());
     } else if (c == 'p' || c == 'P') {
-      exitSerialVisualOverride();
+      serialVisualOverride = false;
+      serialVisualOverrideUntil = 0;
       togglePowerSafe();
       applyLampState();
       Serial.printf("SIM power toggle | power=%d bright=%u color=%u\n", (int)cfg::power(), (unsigned)cfg::bright(), (unsigned)cfg::color());
     } else if (c == '+') {
-      exitSerialVisualOverride();
+      serialVisualOverride = false;
+      serialVisualOverrideUntil = 0;
       db[kk::bright] = (uint8_t)constrain((int)cfg::bright() + 10, 0, 100);
       db.update();
       applyLampState();
       Serial.printf("SIM bright+ | bright=%u\n", (unsigned)cfg::bright());
     } else if (c == '-') {
-      exitSerialVisualOverride();
-      db[kk::bright] = (uint8_t)constrain((int)cfg::bright() - 10, 0, 100);
+      serialVisualOverride = false;
+      serialVisualOverrideUntil = 0;
+      db[kk::bright] = (uint8_t)constrain((int)cfg::bright() - 10, BTN_MIN_BRIGHT, 100);
       db.update();
       applyLampState();
       Serial.printf("SIM bright- | bright=%u\n", (unsigned)cfg::bright());
@@ -102,6 +106,7 @@ void buttonSerialTestTick() {
     }
   }
 }
+#endif
 
 void buttonTick() {
   btn.tick();
@@ -119,7 +124,7 @@ void buttonTick() {
 
   static int8_t dir = 10;
   if (btn.step()) {
-    int newBright = constrain((int)cfg::bright() + dir, 0, 100);
+    int newBright = constrain((int)cfg::bright() + dir, BTN_MIN_BRIGHT, 100);
     db[kk::bright] = (uint8_t)newBright;
     DEBUG(F("[BTN] step dir=")); DEBUG(dir);
     DEBUG(F(" bright=")); DEBUGLN(newBright);

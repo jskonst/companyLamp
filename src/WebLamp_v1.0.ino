@@ -49,10 +49,11 @@ WiFiClient espClient;
 PubSubClient mqtt(espClient);
 
 bool pirFlag = 0;
-bool winkFlag = 0;
 bool startFlag = 0;
+#if SERIAL_BTN_TEST
 bool serialVisualOverride = false;
 uint32_t serialVisualOverrideUntil = 0;
+#endif
 const uint8_t hLen = strlen(MQTT_HEADER);
 
 Timer onlineTmr(18000, false);
@@ -112,7 +113,6 @@ void setup() {
   FastLED.show();
   Serial.println("LEDs initialized - should be GREEN now!");
 
-  btn.init(BTN_PIN_MODE, BTN_LEVEL);
   btn.setClickTimeout(BTN_CLICK_TIMEOUT);
   btn.setDebTimeout(BTN_DEBOUNCE_TIME);
 #if SERIAL_BTN_TEST
@@ -172,8 +172,12 @@ void loop() {
   buttonTick();
   sett_loop();
 
+#if SERIAL_BTN_TEST
   if (serialVisualOverride && (int32_t)(millis() - serialVisualOverrideUntil) >= 0) {
     serialVisualOverride = false;
   }
   if (!serialVisualOverride) applyLampState();
+#else
+  applyLampState();
+#endif
 }
