@@ -27,11 +27,10 @@ static void build(sets::Builder& b) {
         b.Input(kk::remote, "Remote lamp", "AG_lamp_2");
         b.Input(kk::host, "Host", "broker.mqttdashboard.com");
         b.Number(kk::port, "Port", nullptr, 1, 65535);
-        b.Input(kk::ip, "IP", "0.0.0.0");
         b.Switch(kk::power, "Power");
         b.Slider(kk::bright, "Brightness", 0,100,1);
         b.Slider(kk::color, "Color", 0, 255, 1);
-        if (b.Switch(kk::close_ap, "Close AP")) {   
+        if (b.Switch(kk::close_ap, "Hide AP")) {   
             WiFiConnector.closeAP(db[kk::close_ap]);
         }
         if (b.Button("Connect")) {
@@ -89,8 +88,8 @@ void sett_begin() {
     });
 
     WiFiConnector.setName(makeAPName());
+    WiFiConnector.setTimeout(15);
     WiFiConnector.closeAP(db[kk::close_ap]);
-    WiFiConnector.connect(db[kk::ssid], db[kk::pass]);
 
     // settings
     sett.begin();

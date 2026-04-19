@@ -2,7 +2,7 @@
 
 #include <Arduino.h>
 
-#define PROJECT_NAME "Test"
+#define PROJECT_NAME "WebLamp"
 
 #include <GyverDBFile.h>
 #include <SettingsGyver.h>

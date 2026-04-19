@@ -58,13 +58,6 @@ void showLedsSafe() {
   interrupts();
 }
 
-static void showBlack() {
-  fill_solid(leds, LED_AMOUNT, CRGB::Black);
-  showLedsSafe();
-  delay(2);
-  showLedsSafe();
-}
-
 void applyLampState() {
   static bool initialized = false;
   static bool lastPower = false;
@@ -100,52 +93,7 @@ void applyLampState() {
 }
 
 void setup() {
-  delay(1000);
-  Serial.begin(115200);
-  Serial.println("\n\nStarting WebLamp...");
-
-  Serial.printf("Initializing NeoPixelBus on GPIO%d...\n", LED_PIN);
-  FastLED.addLeds<NEOPIXEL, LED_PIN>(leds, LED_AMOUNT).setCorrection(UncorrectedColor);
-  FastLED.setDither(0);
-  FastLED.setBrightness(50);
-  fill_solid(leds, LED_AMOUNT, CRGB::Green);
-  FastLED.show();
-  Serial.println("LEDs initialized - should be GREEN now!");
-
-  btn.setClickTimeout(BTN_CLICK_TIMEOUT);
-  btn.setDebTimeout(BTN_DEBOUNCE_TIME);
-#if SERIAL_BTN_TEST
-  Serial.println(F("Serial test: 1/2/3 click, +/- brightness, p toggle, r/g/w/k/t visual"));
-#endif
-
-  Timer tmr(2000);
-  while (!tmr.period()) {
-    loadAnimation(CRGB::Green);
-    btn.tick();
-  }
-
-  showBlack();
-  delay(500);
-
-  sett_begin();
-  WiFi.setSleepMode(WIFI_SLEEP_CFG);
-  DEBUG(F("WiFi sleep mode: "));
-  DEBUGLN((int)WIFI_SLEEP_CFG);
-
-  showBlack();
-  delay(200);
-
-  FastLED.setBrightness(100);
-  for (int i = 0; i < 3; i++) {
-    showBlack();
-    delay(800);
-    fill_solid(leds, LED_AMOUNT, CRGB::White);
-    showLedsSafe();
-    delay(800);
-  }
-  showBlack();
-
-  applyLampState();
+  startup();
 }
 
 void loop() {
