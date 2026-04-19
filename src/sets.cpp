@@ -17,25 +17,67 @@ static String makeAPName() {
     return name;
 }
 
+// ========== mode sections ==========
+static void buildLamp(sets::Builder& b) {
+    sets::Group g(b, "Лампа");
+    b.Switch(kk::power, "Питание");
+    b.Slider(kk::bright, "Яркость", 0, 100, 1);
+    b.Slider(kk::color,  "Цвет",    0, 255, 1);
+}
+
+static void buildPomodoro(sets::Builder& b) {
+    sets::Group g(b, "Помодоро");
+    b.Label("Реализуется в Plan 10");
+}
+
+static void buildMood(sets::Builder& b) {
+    sets::Group g(b, "Настроение");
+    b.Label("Реализуется в Plan 08");
+}
+
+static void buildMeeting(sets::Builder& b) {
+    sets::Group g(b, "Митинг");
+    b.Label("Реализуется в Plan 09");
+}
+
+static void buildDND(sets::Builder& b) {
+    sets::Group g(b, "Не беспокоить");
+    b.Label("Реализуется в Plan 07");
+}
+
+static void buildWifi(sets::Builder& b) {
+    b.Input(kk::ssid,   "SSID");
+    b.Pass(kk::pass,    "Пароль", "");
+    b.Input(kk::local,  "Имя лампы",   "AG_lamp_1");
+    b.Input(kk::remote, "Имя коллеги", "AG_lamp_2");
+    b.Input(kk::host,   "MQTT хост",   "broker.mqttdashboard.com");
+    b.Number(kk::port,  "Порт", nullptr, 1, 65535);
+    if (b.Switch(kk::close_ap, "Скрыть AP")) {
+        WiFiConnector.closeAP(db[kk::close_ap]);
+    }
+    if (b.Button("Подключиться")) {
+        WiFiConnector.connect(db[kk::ssid], db[kk::pass]);
+    }
+}
+
 // ========== build ==========
 static void build(sets::Builder& b) {
+    if (b.Tabs(kk::mode, "LAMP;POMODORO;MOOD;MEETING;DND")) {
+        // Tabs change db[kk::mode], force page rebuild so mode-specific controls refresh immediately.
+        b.reload();
+    }
+
+    switch ((uint8_t)db[kk::mode]) {
+        case 0: buildLamp(b);     break;
+        case 1: buildPomodoro(b); break;
+        case 2: buildMood(b);     break;
+        case 3: buildMeeting(b);  break;
+        case 4: buildDND(b);      break;
+    }
+
     {
-        sets::Group g(b, "WiFi");
-        b.Input(kk::ssid, "SSID");
-        b.Pass(kk::pass, "Pass", "");
-        b.Input(kk::local, "Local lamp", "AG_lamp_1");
-        b.Input(kk::remote, "Remote lamp", "AG_lamp_2");
-        b.Input(kk::host, "Host", "broker.mqttdashboard.com");
-        b.Number(kk::port, "Port", nullptr, 1, 65535);
-        b.Switch(kk::power, "Power");
-        b.Slider(kk::bright, "Brightness", 0,100,1);
-        b.Slider(kk::color, "Color", 0, 255, 1);
-        if (b.Switch(kk::close_ap, "Hide AP")) {   
-            WiFiConnector.closeAP(db[kk::close_ap]);
-        }
-        if (b.Button("Connect")) {
-            WiFiConnector.connect(db[kk::ssid], db[kk::pass]);
-        }
+        sets::Menu wifi(b, "WiFi");
+        buildWifi(b);
     }
 }
 

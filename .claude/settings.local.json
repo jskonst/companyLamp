@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pio run *)",
+      "WebFetch(domain:github.com)",
+      "Bash(git clone *)"
+    ]
+  }
+}

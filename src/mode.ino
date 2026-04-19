@@ -35,11 +35,25 @@ void showModeIndicator(Mode m) {
 void modeIndicatorTick() {
   if (_modeIndActive && (int32_t)(millis() - _modeIndUntil) >= 0) {
     _modeIndActive = false;
+    invalidateLampStateCache();
   }
 }
 
 bool isModeIndicatorActive() {
   return _modeIndActive;
+}
+
+static uint8_t _prevDbMode = 255;
+
+void modeWebTick() {
+    uint8_t current = (uint8_t)db[kk::mode];
+    if (_prevDbMode != current) {
+        if (_prevDbMode != 255) {
+            showModeIndicator((Mode)current);
+        }
+        _prevDbMode = current;
+        sett.reload();
+    }
 }
 
 void renderTick() {

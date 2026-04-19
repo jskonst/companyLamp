@@ -8,6 +8,7 @@
 | 02 | [PLAN_02_FIX_BASICS](PLAN_02_FIX_BASICS.md) | Слайдер цвета в UI, чистка мёртвого кода и либ | 01 | ⬜ |
 | 03 | [PLAN_03_STARTUP_WIFI](PLAN_03_STARTUP_WIFI.md) | Старт, WiFi-анимация, показ номера лампы вспышками | 02 | ⬜ |
 | 04 | [PLAN_04_MODE_SYSTEM](PLAN_04_MODE_SYSTEM.md) | Система режимов: 3/4 клика, индикатор секции на кольце | 01, 02 | ⬜ |
+| 04b | [PLAN_04b_WEB_MODE_UI](PLAN_04b_WEB_MODE_UI.md) | Web UI: таб-бар режимов, контролы LAMP, WiFi в Menu | 04 | ✅ |
 | 05 | [PLAN_05_MODE1_LAMP](PLAN_05_MODE1_LAMP.md) | Режим «Лампа»: плавный рендер, wink-эффект | 04 | ⬜ |
 | 06 | [PLAN_06_MQTT_INFRA](PLAN_06_MQTT_INFRA.md) | MQTT: топики, heartbeat, callback, офлайн-режим | 03 | ⬜ |
 | 07 | [PLAN_07_MODE6_DND](PLAN_07_MODE6_DND.md) | Режим «Не беспокоить»: дыхание красным, MQTT publish | 04, 06 | ⬜ |
@@ -32,7 +33,7 @@
 ## Рекомендуемый порядок выполнения
 
 ```
-01 → 02 → 04 → 03 → 05 → 06 → 07 → 08 → 09 → 10
+01 → 02 → 04 → 04b → 03 → 05 → 06 → 07 → 08 → 09 → 10
 ```
 
 Объяснение:

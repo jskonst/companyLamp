@@ -60,22 +60,31 @@ void showLedsSafe() {
   interrupts();
 }
 
-void applyLampState() {
-  static bool initialized = false;
-  static bool lastPower = false;
-  static uint8_t lastBright = 0;
-  static uint8_t lastColor = 255;
+static bool lampStateCacheInitialized = false;
+static bool lampStateLastPower = false;
+static uint8_t lampStateLastBright = 0;
+static uint8_t lampStateLastColor = 255;
 
+void invalidateLampStateCache() {
+  lampStateCacheInitialized = false;
+}
+
+void applyLampState() {
   bool power = sett_started() ? cfg::power() : true;
   uint8_t bright = sett_started() ? cfg::bright() : 20;
   uint8_t color = sett_started() ? cfg::color() : 0;
 
-  if (initialized && power == lastPower && bright == lastBright && color == lastColor) return;
+  if (lampStateCacheInitialized &&
+      power == lampStateLastPower &&
+      bright == lampStateLastBright &&
+      color == lampStateLastColor) {
+    return;
+  }
 
-  lastPower = power;
-  lastBright = bright;
-  lastColor = color;
-  initialized = true;
+  lampStateLastPower = power;
+  lampStateLastBright = bright;
+  lampStateLastColor = color;
+  lampStateCacheInitialized = true;
 
   CRGB c;
   if (!power) c = CRGB::Black;
@@ -104,6 +113,7 @@ void loop() {
 #endif
   buttonTick();
   sett_loop();
+  modeWebTick();
   modeIndicatorTick();
 
 #if SERIAL_BTN_TEST
