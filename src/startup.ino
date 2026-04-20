@@ -2,6 +2,21 @@
 
 extern void showLedsSafe();
 
+// ===== startup WiFi animation tuning =====
+constexpr uint8_t WIFI_CONNECTED_BLINK_COUNT = 2;
+constexpr uint8_t WIFI_CONNECTED_BRIGHT_MIN = 16;
+constexpr uint8_t WIFI_CONNECTED_BRIGHT_MAX = 78;
+constexpr uint8_t WIFI_CONNECTED_BRIGHT_STEP = 2;
+constexpr uint16_t WIFI_CONNECTED_STEP_DELAY_MS = 14;
+constexpr uint16_t WIFI_CONNECTED_END_PAUSE_MS = 120;
+
+constexpr uint8_t WIFI_WAIT_BRIGHT_MIN = 14;
+constexpr uint8_t WIFI_WAIT_BRIGHT_MAX = 62;
+constexpr uint8_t WIFI_WAIT_BRIGHT_FLOOR = 20;
+constexpr uint8_t WIFI_WAIT_BRIGHT_STEP = 2;
+constexpr uint16_t WIFI_WAIT_STEP_DELAY_MS = 18;
+constexpr uint32_t WIFI_WAIT_PULSE_PERIOD_MS = 5000ul;
+
 static void startupShowBlack() {
   fill_solid(leds, LED_AMOUNT, CRGB::Black);
   showLedsSafe();
@@ -10,23 +25,36 @@ static void startupShowBlack() {
 }
 
 static void showWifiConnectedBlink() {
-  for (uint8_t i = 0; i < 3; i++) {
-    fill_solid(leds, LED_AMOUNT, CRGB::White);
-    FastLED.setBrightness(80);
-    showLedsSafe();
-    delay(180);
-    startupShowBlack();
-    delay(180);
+  fill_solid(leds, LED_AMOUNT, CRGB::Green);
+  for (uint8_t i = 0; i < WIFI_CONNECTED_BLINK_COUNT; i++) {
+    for (uint8_t b = WIFI_CONNECTED_BRIGHT_MIN; b <= WIFI_CONNECTED_BRIGHT_MAX; b += WIFI_CONNECTED_BRIGHT_STEP) {
+      FastLED.setBrightness(b);
+      showLedsSafe();
+      delay(WIFI_CONNECTED_STEP_DELAY_MS);
+    }
+    for (int b = WIFI_CONNECTED_BRIGHT_MAX;
+         b >= (int)WIFI_CONNECTED_BRIGHT_MIN + WIFI_CONNECTED_BRIGHT_STEP;
+         b -= WIFI_CONNECTED_BRIGHT_STEP) {
+      FastLED.setBrightness((uint8_t)b);
+      showLedsSafe();
+      delay(WIFI_CONNECTED_STEP_DELAY_MS);
+    }
   }
-  delay(250);
+  delay(WIFI_CONNECTED_END_PAUSE_MS);
 }
 
 static void showWifiWaitPulse() {
-  fill_solid(leds, LED_AMOUNT, CRGB::White);
-  FastLED.setBrightness(64);
-  showLedsSafe();
-  delay(80);
-  startupShowBlack();
+  fill_solid(leds, LED_AMOUNT, CRGB::Green);
+  for (uint8_t b = WIFI_WAIT_BRIGHT_MIN; b <= WIFI_WAIT_BRIGHT_MAX; b += WIFI_WAIT_BRIGHT_STEP) {
+    FastLED.setBrightness(b);
+    showLedsSafe();
+    delay(WIFI_WAIT_STEP_DELAY_MS);
+  }
+  for (int b = WIFI_WAIT_BRIGHT_MAX; b >= WIFI_WAIT_BRIGHT_FLOOR; b -= WIFI_WAIT_BRIGHT_STEP) {
+    FastLED.setBrightness((uint8_t)b);
+    showLedsSafe();
+    delay(WIFI_WAIT_STEP_DELAY_MS);
+  }
 }
 
 static bool startupButtonClicked() {
@@ -103,7 +131,7 @@ void startup() {
     sett_loop();
     loadAnimation(CRGB::Green);
 
-    if ((uint32_t)(millis() - pulseTmr) >= 5000ul) {
+    if ((uint32_t)(millis() - pulseTmr) >= WIFI_WAIT_PULSE_PERIOD_MS) {
       pulseTmr = millis();
       showWifiWaitPulse();
     }

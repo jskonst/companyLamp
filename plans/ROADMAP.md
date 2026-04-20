@@ -7,6 +7,7 @@
 | 01 | [PLAN_01_FIX_BUTTON](PLAN_01_FIX_BUTTON.md) | Исправить кнопку (`btn.getClicks()` вместо ручного агрегатора) | — | ⬜ |
 | 02 | [PLAN_02_FIX_BASICS](PLAN_02_FIX_BASICS.md) | Слайдер цвета в UI, чистка мёртвого кода и либ | 01 | ⬜ |
 | 03 | [PLAN_03_STARTUP_WIFI](PLAN_03_STARTUP_WIFI.md) | Старт, WiFi-анимация, показ номера лампы вспышками | 02 | ⬜ |
+| 03b | [PLAN_03b_STARTUP_SOFT_WIFI_ANIM](PLAN_03b_STARTUP_SOFT_WIFI_ANIM.md) | Уточнение старта: мягкая зелёная индикация без резких вспышек | 03 | ⬜ |
 | 04 | [PLAN_04_MODE_SYSTEM](PLAN_04_MODE_SYSTEM.md) | Система режимов: 3/4 клика, индикатор секции на кольце | 01, 02 | ⬜ |
 | 04b | [PLAN_04b_WEB_MODE_UI](PLAN_04b_WEB_MODE_UI.md) | Web UI: таб-бар режимов, контролы LAMP, WiFi в Menu | 04 | ✅ |
 | 05 | [PLAN_05_MODE1_LAMP](PLAN_05_MODE1_LAMP.md) | Режим «Лампа»: плавный рендер, wink-эффект | 04 | ⬜ |
@@ -33,7 +34,7 @@
 ## Рекомендуемый порядок выполнения
 
 ```
-01 → 02 → 04 → 04b → 03 → 05 → 06 → 07 → 08 → 09 → 10
+01 → 02 → 04 → 04b → 03 → 03b → 05 → 06 → 07 → 08 → 09 → 10
 ```
 
 Объяснение:
