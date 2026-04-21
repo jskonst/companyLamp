@@ -1,34 +1,39 @@
-// STUB: Plan 09 заменит этот файл полной реализацией.
-// meetingQuickCall() — уже рабочая (визуальная часть), MQTT добавит Plan 06+.
-
 #include "led_driver.h"
+#include "sets.h"
 
-void renderMeeting() {
-  static bool initialized = false;
-  if (initialized) return;
-  initialized = true;
-  fill_solid(leds, LED_AMOUNT, CRGB(0, 200, 255));
-  FastLED.setBrightness(60);
+static void showMeetingFlash() {
+  uint8_t color = cfg::color();
+  CRGB c = (color == 0) ? CRGB::White : (CRGB)CHSV(color, 255, 255);
+
+  uint8_t base = cfg::power() ? map(cfg::bright(), 0, 100, 0, 255) : 0;
+  uint8_t peak = (uint8_t)min((uint16_t)base + 26u, 255u);  // +10% от 255
+
+  fill_solid(leds, LED_AMOUNT, c);
+  FastLED.setBrightness(base);
+  showLedsSafe();
+
+  for (uint8_t n = 0; n < 5; n++) {
+    brightLoop(base, peak, 2);
+    brightLoop(peak, base, 2);
+  }
+
+  FastLED.setBrightness(base);
   showLedsSafe();
 }
 
-void meetingClick(uint8_t clicks) { (void)clicks; }
-
-static void showMeetingFlash() {
-  for (uint8_t n = 0; n < 3; n++) {
-    fill_solid(leds, LED_AMOUNT, CRGB(0, 180, 255));
-    FastLED.setBrightness(100);
-    showLedsSafe();
-    delay(100);
-    fill_solid(leds, LED_AMOUNT, CRGB::Black);
-    FastLED.setBrightness(0);
-    showLedsSafe();
-    delay(100);
+void meetingQuickCall() {
+  DEBUGLN(F("[MTG] quick-call"));
+  showMeetingFlash();
+  if (!cfg::offline() && mqtt.connected()) {
+    publishMeeting();
+    DEBUGLN(F("[MTG] published"));
   }
 }
 
-void meetingQuickCall() {
-  // TODO (Plan 06+): проверить !cfg::offline() && mqtt.connected() перед отправкой
-  DEBUGLN(F("[MTG] quick-call"));
-  showMeetingFlash();
+void meetingTick() {
+  String sender;
+  if (takeMeetingSignal(sender)) {
+    DEBUG(F("[MTG] incoming from ")); DEBUGLN(sender);
+    showMeetingFlash();
+  }
 }

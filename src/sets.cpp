@@ -73,7 +73,7 @@ static void buildWifi(sets::Builder& b) {
 
 // ========== build ==========
 static void build(sets::Builder& b) {
-    if (b.Tabs(kk::mode, "LAMP;POMODORO;MOOD;MEETING;DND")) {
+    if (b.Tabs(kk::mode, "LAMP;POMODORO;MOOD;DND")) {
         // Tabs change db[kk::mode], force page rebuild so mode-specific controls refresh immediately.
         b.reload();
     }
@@ -82,8 +82,7 @@ static void build(sets::Builder& b) {
         case 0: buildLamp(b);     break;
         case 1: buildPomodoro(b); break;
         case 2: buildMood(b);     break;
-        case 3: buildMeeting(b);  break;
-        case 4: buildDND(b);      break;
+        case 3: buildDND(b);      break;
     }
 
     {

@@ -8,13 +8,14 @@
 | 02 | [PLAN_02_FIX_BASICS](PLAN_02_FIX_BASICS.md) | Слайдер цвета в UI, чистка мёртвого кода и либ | 01 | ⬜ |
 | 03 | [PLAN_03_STARTUP_WIFI](PLAN_03_STARTUP_WIFI.md) | Старт, WiFi-анимация, показ номера лампы вспышками | 02 | ⬜ |
 | 03b | [PLAN_03b_STARTUP_SOFT_WIFI_ANIM](PLAN_03b_STARTUP_SOFT_WIFI_ANIM.md) | Уточнение старта: мягкая зелёная индикация без резких вспышек | 03 | ⬜ |
+| 03c | [PLAN_03c_STARTUP_REFACTOR](PLAN_03c_STARTUP_REFACTOR.md) | Рефакторинг startup.ino без изменения поведения | 03, 03b | ⬜ |
 | 04 | [PLAN_04_MODE_SYSTEM](PLAN_04_MODE_SYSTEM.md) | Система режимов: 3/4 клика, индикатор секции на кольце | 01, 02 | ⬜ |
 | 04b | [PLAN_04b_WEB_MODE_UI](PLAN_04b_WEB_MODE_UI.md) | Web UI: таб-бар режимов, контролы LAMP, WiFi в Menu | 04 | ✅ |
-| 05 | [PLAN_05_MODE1_LAMP](PLAN_05_MODE1_LAMP.md) | Режим «Лампа»: плавный рендер, wink-эффект | 04 | ⬜ |
+| 05 | [PLAN_05_MODE1_LAMP](PLAN_05_MODE1_LAMP.md) | Режим «Лампа»: плавный рендер, wink-эффект | 04 | ✅ |
 | 06 | [PLAN_06_MQTT_INFRA](PLAN_06_MQTT_INFRA.md) | MQTT: топики, heartbeat, callback, офлайн-режим | 03 | ✅ |
 | 07 | [PLAN_07_MODE6_DND](PLAN_07_MODE6_DND.md) | Режим «Не беспокоить»: дыхание красным, MQTT publish | 04, 06 | ⬜ |
 | 08 | [PLAN_08_MODE3_4_MOOD](PLAN_08_MODE3_4_MOOD.md) | Режимы «Настроение» и «Настроение команды» | 04, 06 | ⬜ |
-| 09 | [PLAN_09_MODE5_MEETING](PLAN_09_MODE5_MEETING.md) | Режим «Позвать на митинг» | 04, 06, 07 | ⬜ |
+| 09 | [PLAN_09_MODE5_MEETING](PLAN_09_MODE5_MEETING.md) | ~~Режим «Позвать на митинг»~~ — заменён wink (5 кликов) | — | ❌ |
 | 10 | [PLAN_10_MODE2_POMODORO](PLAN_10_MODE2_POMODORO.md) | Режим «Помодоро»: таймер, кольцо-прогресс, DND-сигнал | 04, 06, 07 | ⬜ |
 | 11 | [PLAN_11_GROUPS](PLAN_11_GROUPS.md) | Несколько групп ламп: UI управления, переключение, изоляция | 06 | ⬜ |
 
@@ -35,7 +36,7 @@
 ## Рекомендуемый порядок выполнения
 
 ```
-01 → 02 → 04 → 04b → 03 → 03b → 06 → 05 → 07 → 08 → 09 → 10 → 11
+01 → 02 → 04 → 04b → 03 → 03b → 03c → 06 → 05 → 07 → 08 → 09 → 10 → 11
 ```
 
 Объяснение:

@@ -6,7 +6,6 @@ const CRGB MODE_COLORS[MODE_COUNT] = {
   CRGB(255, 200, 100),  // LAMP:     тёплый белый
   CRGB(255, 80,  0  ),  // POMODORO: оранжевый
   CRGB(0,   200, 0  ),  // MOOD:     зелёный (заменяется реальным цветом команды)
-  CRGB(0,   200, 255),  // MEETING:  голубой
   CRGB(200, 0,   0  ),  // DND:      красный
 };
 
@@ -22,10 +21,12 @@ void setMode(Mode m) {
 static uint32_t _modeIndUntil = 0;
 static bool _modeIndActive = false;
 
+static constexpr uint8_t LEDS_PER_MODE = LED_AMOUNT / MODE_COUNT;  // 24/4 = 6
+
 void showModeIndicator(Mode m) {
   fill_solid(leds, LED_AMOUNT, CRGB::Black);
-  uint8_t base = (uint8_t)m * 4;
-  for (uint8_t i = base; i < base + 4; i++) leds[i] = MODE_COLORS[(uint8_t)m];
+  uint8_t base = (uint8_t)m * LEDS_PER_MODE;
+  for (uint8_t i = base; i < base + LEDS_PER_MODE; i++) leds[i] = MODE_COLORS[(uint8_t)m];
   FastLED.setBrightness(80);
   showLedsSafe();
   _modeIndActive = true;
@@ -62,7 +63,6 @@ void renderTick() {
     case Mode::LAMP:     renderLamp();     break;
     case Mode::POMODORO: renderPomodoro(); break;
     case Mode::MOOD:     renderMood();     break;
-    case Mode::MEETING:  renderMeeting();  break;
     case Mode::DND:      renderDND();      break;
   }
 }

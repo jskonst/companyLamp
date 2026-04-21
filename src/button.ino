@@ -29,7 +29,6 @@ static void handleButtonClicks(uint8_t clicks) {
     case Mode::LAMP:     lampClick(clicks);     break;
     case Mode::POMODORO: pomodoroClick(clicks); break;
     case Mode::MOOD:     moodClick(clicks);     break;
-    case Mode::MEETING:  meetingClick(clicks);  break;
     case Mode::DND:      dndClick(clicks);      break;
   }
 }
