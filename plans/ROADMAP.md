@@ -11,11 +11,12 @@
 | 04 | [PLAN_04_MODE_SYSTEM](PLAN_04_MODE_SYSTEM.md) | Система режимов: 3/4 клика, индикатор секции на кольце | 01, 02 | ⬜ |
 | 04b | [PLAN_04b_WEB_MODE_UI](PLAN_04b_WEB_MODE_UI.md) | Web UI: таб-бар режимов, контролы LAMP, WiFi в Menu | 04 | ✅ |
 | 05 | [PLAN_05_MODE1_LAMP](PLAN_05_MODE1_LAMP.md) | Режим «Лампа»: плавный рендер, wink-эффект | 04 | ⬜ |
-| 06 | [PLAN_06_MQTT_INFRA](PLAN_06_MQTT_INFRA.md) | MQTT: топики, heartbeat, callback, офлайн-режим | 03 | ⬜ |
+| 06 | [PLAN_06_MQTT_INFRA](PLAN_06_MQTT_INFRA.md) | MQTT: топики, heartbeat, callback, офлайн-режим | 03 | ✅ |
 | 07 | [PLAN_07_MODE6_DND](PLAN_07_MODE6_DND.md) | Режим «Не беспокоить»: дыхание красным, MQTT publish | 04, 06 | ⬜ |
 | 08 | [PLAN_08_MODE3_4_MOOD](PLAN_08_MODE3_4_MOOD.md) | Режимы «Настроение» и «Настроение команды» | 04, 06 | ⬜ |
 | 09 | [PLAN_09_MODE5_MEETING](PLAN_09_MODE5_MEETING.md) | Режим «Позвать на митинг» | 04, 06, 07 | ⬜ |
 | 10 | [PLAN_10_MODE2_POMODORO](PLAN_10_MODE2_POMODORO.md) | Режим «Помодоро»: таймер, кольцо-прогресс, DND-сигнал | 04, 06, 07 | ⬜ |
+| 11 | [PLAN_11_GROUPS](PLAN_11_GROUPS.md) | Несколько групп ламп: UI управления, переключение, изоляция | 06 | ⬜ |
 
 ## Граф зависимостей
 
@@ -34,7 +35,7 @@
 ## Рекомендуемый порядок выполнения
 
 ```
-01 → 02 → 04 → 04b → 03 → 03b → 05 → 06 → 07 → 08 → 09 → 10
+01 → 02 → 04 → 04b → 03 → 03b → 06 → 05 → 07 → 08 → 09 → 10 → 11
 ```
 
 Объяснение:

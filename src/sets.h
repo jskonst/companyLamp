@@ -21,12 +21,17 @@ uint8_t color();
 String ssid();
 String pass();
 String local();
-String remote();
 String host();
 uint16_t port();
 String ip();
 bool close_ap();
+String group();
+String mqttUser();
+String mqttPass();
+bool offline();
 }
+
+String mqttStatusString();
 
 DB_KEYS(
     kk,
@@ -41,5 +46,9 @@ DB_KEYS(
     power,
     bright,
     color,
-    mode
+    mode,
+    group,
+    mqtt_user,
+    mqtt_pass,
+    offline
 );

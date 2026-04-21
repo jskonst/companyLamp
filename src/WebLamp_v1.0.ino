@@ -16,6 +16,10 @@
 #define USE_PIR 0
 #define IGNORE_PIR 0
 
+// Максимум ламп в группе. RemoteLamp ≈ 28 байт, итого N×28 байт статической RAM.
+// При увеличении сверх 20 проверьте свободную память (сейчас ~50 KB свободно).
+#define MAX_REMOTE_LAMPS 20
+
 #define MQTT_HEADER "GWL:"
 
 #include <ESP8266WiFi.h>
@@ -25,6 +29,7 @@
 #include <EncButton.h>
 #include "Timer.h"
 #include "sets.h"
+#include "mqtt.h"
 
 #define DEBUG_ENABLE 1
 #if DEBUG_ENABLE
@@ -105,6 +110,7 @@ void applyLampState() {
 
 void setup() {
   startup();
+  mqttBegin();
 }
 
 void loop() {
@@ -113,6 +119,7 @@ void loop() {
 #endif
   buttonTick();
   sett_loop();
+  mqttTick();
   modeWebTick();
   modeIndicatorTick();
 

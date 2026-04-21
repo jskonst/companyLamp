@@ -8,21 +8,27 @@
 
 ## 6.1 Топики
 
+Структура топика: `GWL/<group>/<lamp>/<subtopic>`
+
 ```
-GWL:<lamp>/heartbeat   publish каждые 8 сек
-GWL:<lamp>/mood        publish/subscribe  uint8 (HSV hue 0–120)
-GWL:<lamp>/dnd         publish/subscribe  "0" | "1"
-GWL:<lamp>/meeting     publish/subscribe  имя лампы-инициатора
-GWL:<lamp>/pomodoro    publish/subscribe  "work:<hue>" | "break" | "idle"
-GWL:<lamp>/pir         publish каждые 8 сек вместе с heartbeat
+GWL/<group>/<lamp>/heartbeat   publish каждые 8 сек
+GWL/<group>/<lamp>/mood        publish/subscribe  uint8 (HSV hue 0–120)
+GWL/<group>/<lamp>/dnd         publish/subscribe  "0" | "1"
+GWL/<group>/<lamp>/meeting     publish/subscribe  имя лампы-инициатора
+GWL/<group>/<lamp>/pomodoro    publish/subscribe  "work:<hue>" | "break" | "idle"
 ```
 
-Подписка: на все топики всех удалённых ламп: `GWL:<remote>/#`
-(или по одной если брокер не поддерживает wildcard).
+`<group>` — название группы (например `office`, `family`), задаётся в настройках UI.
+Подписка на все лампы группы: `GWL/<group>/+/#` (wildcard по имени лампы).
+Своё сообщение отфильтровывается в callback по `sender == cfg::local()`.
+
+> **Будущее:** несколько групп и переключение между ними — см. PLAN_11_GROUPS.
 
 ---
 
 ## 6.2 Переменная состояния каждой удалённой лампы
+
+Лампы обнаруживаются автоматически: первый heartbeat от нового имени создаёт запись.
 
 ```cpp
 struct RemoteLamp {
@@ -34,8 +40,18 @@ struct RemoteLamp {
   bool online() const { return (uint32_t)(millis() - lastSeen) < 18000UL; }
 };
 
-RemoteLamp remotes[4];   // до 4 удалённых ламп
+RemoteLamp remotes[20];  // до 20 удалённых ламп в группе
 uint8_t remoteCount = 0;
+
+RemoteLamp* findOrCreateRemote(const char* name) {
+  for (uint8_t i = 0; i < remoteCount; i++)
+    if (strcmp(remotes[i].name, name) == 0) return &remotes[i];
+  if (remoteCount >= 20) return nullptr;
+  RemoteLamp& r = remotes[remoteCount++];
+  strncpy(r.name, name, sizeof(r.name) - 1);
+  r.lastSeen = 0; r.mood = 0; r.dnd = false; r.pir = false;
+  return &r;
+}
 ```
 
 ---
@@ -62,18 +78,21 @@ void connectMQTT() {
   lastAttempt = millis();
 
   String id = "WebLamp-" + String(random(0xffffff), HEX);
-  if (!mqtt.connect(id.c_str())) {
+  String user = cfg::mqttUser();
+  String pass = cfg::mqttPass();
+  bool ok = user.length()
+    ? mqtt.connect(id.c_str(), user.c_str(), pass.c_str())
+    : mqtt.connect(id.c_str());
+  if (!ok) {
     DEBUG(F("[MQTT] connect failed, rc=")); DEBUGLN(mqtt.state());
     return;
   }
   DEBUGLN(F("[MQTT] connected"));
 
-  // подписываемся на топики удалённых ламп
-  for (uint8_t i = 0; i < remoteCount; i++) {
-    String topic = String("GWL:") + remotes[i].name + "/#";
-    mqtt.subscribe(topic.c_str());
-    DEBUG(F("[MQTT] subscribed: ")); DEBUGLN(topic);
-  }
+  // подписываемся на все лампы своей группы
+  String topic = String("GWL/") + cfg::group() + "/+/#";
+  mqtt.subscribe(topic.c_str());
+  DEBUG(F("[MQTT] subscribed: ")); DEBUGLN(topic);
 }
 ```
 
@@ -86,7 +105,7 @@ void heartbeatTick() {
   static Timer hbTmr(8000);
   if (!hbTmr.period()) return;
 
-  String topic = String("GWL:") + cfg::local() + "/heartbeat";
+  String topic = String("GWL/") + cfg::group() + "/" + cfg::local() + "/heartbeat";
   String payload = USE_PIR ? (pirActive() ? "1" : "0") : "0";
   mqtt.publish(topic.c_str(), payload.c_str(), true);  // retain=true
 }
@@ -99,16 +118,18 @@ void heartbeatTick() {
 ```cpp
 void callback(char* topic, byte* payload, uint16_t len) {
   payload[len] = '\0';
-  String t(topic);    // "GWL:<name>/<subtopic>"
+  String t(topic);    // "GWL/<group>/<name>/<subtopic>"
   String val((char*)payload);
 
-  // найти отправителя
-  int colon = t.indexOf(':');
-  int slash  = t.lastIndexOf('/');
-  if (colon < 0 || slash < 0) return;
+  // разбираем: GWL/<group>/<lamp>/<subtopic>
+  // пропускаем "GWL/<group>/"
+  int p1 = t.indexOf('/');           // после "GWL"
+  int p2 = t.indexOf('/', p1 + 1);  // после group
+  int p3 = t.lastIndexOf('/');       // перед subtopic
+  if (p1 < 0 || p2 < 0 || p3 <= p2) return;
 
-  String sender  = t.substring(colon + 1, slash);
-  String subtopic = t.substring(slash + 1);
+  String sender   = t.substring(p2 + 1, p3);
+  String subtopic = t.substring(p3 + 1);
 
   // не обрабатывать свои сообщения
   if (sender == cfg::local()) return;
@@ -143,29 +164,53 @@ void callback(char* topic, byte* payload, uint16_t len) {
 
 ```cpp
 void publishMood(uint8_t hue) {
-  String topic = String("GWL:") + cfg::local() + "/mood";
+  String topic = String("GWL/") + cfg::group() + "/" + cfg::local() + "/mood";
   mqtt.publish(topic.c_str(), String(hue).c_str(), true);
 }
 
 void publishDND(bool active) {
-  String topic = String("GWL:") + cfg::local() + "/dnd";
+  String topic = String("GWL/") + cfg::group() + "/" + cfg::local() + "/dnd";
   mqtt.publish(topic.c_str(), active ? "1" : "0", true);
 }
 
 void publishMeeting() {
-  String topic = String("GWL:") + cfg::local() + "/meeting";
+  String topic = String("GWL/") + cfg::group() + "/" + cfg::local() + "/meeting";
   mqtt.publish(topic.c_str(), cfg::local().c_str());
 }
 
 void publishPomodoro(const char* state) {
-  String topic = String("GWL:") + cfg::local() + "/pomodoro";
+  String topic = String("GWL/") + cfg::group() + "/" + cfg::local() + "/pomodoro";
   mqtt.publish(topic.c_str(), state, true);
 }
 ```
 
 ---
 
-## 6.7 Офлайн-режим
+## 6.7 Статус группы в UI
+
+Кнопка «Обновить» в веб-интерфейсе — по нажатию рендерится текущий `remotes[]`.
+
+```cpp
+// в build() секции MQTT
+b.Label("", mqttStatusString().c_str());
+b.Button("", "Обновить");  // перезагружает страницу, Label перерисуется
+
+String mqttStatusString() {
+  if (!mqtt.connected()) return "MQTT: нет подключения";
+  String s = "Группа: " + cfg::group() + "\n";
+  for (uint8_t i = 0; i < remoteCount; i++) {
+    s += remotes[i].online() ? "● " : "○ ";
+    s += remotes[i].name;
+    s += "\n";
+  }
+  if (remoteCount == 0) s += "(нет ламп в группе)";
+  return s;
+}
+```
+
+---
+
+## 6.8 Офлайн-режим
 
 Переключатель в веб-интерфейсе: `b.Switch(kk::offline, "Офлайн-режим")`.
 При `cfg::offline() == true`:
@@ -179,18 +224,20 @@ void publishPomodoro(const char* state) {
 
 | Файл | Действие |
 |---|---|
-| `src/mqtt.ino` | Переписать: новый протокол, connectMQTT, heartbeat, callback |
-| `src/sets.h` | Добавить `kk::offline` в DB_KEYS |
-| `src/sets.cpp` | `db.init(kk::offline, false)`, добавить Switch в build() |
+| `src/mqtt.ino` | Переписать: новый протокол, connectMQTT, heartbeat, callback, findOrCreateRemote |
+| `src/sets.h` | Добавить `kk::offline`, `kk::group`, `kk::mqtt_user`, `kk::mqtt_pass` в DB_KEYS |
+| `src/sets.cpp` | Добавить init и поля в buildWifi(): Input логин, Pass пароль брокера, Input группа, Switch офлайн |
 | `src/WebLamp_v1.0.ino` | В loop(): добавить `mqttTick()` |
+| `src/sets.cpp` | В build(): добавить Label + кнопку «Обновить» для статуса группы |
 
 ---
 
 ## Проверка
 
 - [ ] При включённом WiFi и валидных настройках: подключение к брокеру
-- [ ] Serial: `[MQTT] connected`, затем `[MQTT] subscribed: GWL:lamp_2/#`
+- [ ] Serial: `[MQTT] connected`, затем `[MQTT] subscribed: GWL/office/+/#`
 - [ ] Heartbeat: каждые 8 сек в Serial `[MQTT] heartbeat sent`
 - [ ] Два устройства: отправка mood с одного → получение на другом
 - [ ] Офлайн-режим: переключатель в UI → MQTT не используется
 - [ ] Потеря связи с брокером: автоматическое переподключение через 5 сек
+- [ ] Кнопка «Обновить» в UI: показывает список ламп группы с онлайн/оффлайн статусом
