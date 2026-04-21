@@ -29,6 +29,7 @@ String group();
 String mqttUser();
 String mqttPass();
 bool offline();
+bool dnd();
 }
 
 String mqttStatusString();
@@ -50,5 +51,6 @@ DB_KEYS(
     group,
     mqtt_user,
     mqtt_pass,
-    offline
+    offline,
+    dnd
 );

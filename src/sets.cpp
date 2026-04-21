@@ -42,7 +42,7 @@ static void buildMeeting(sets::Builder& b) {
 
 static void buildDND(sets::Builder& b) {
     sets::Group g(b, "Не беспокоить");
-    b.Label("Реализуется в Plan 07");
+    b.Switch(kk::dnd, "Не беспокоить");
 }
 
 static void buildWifi(sets::Builder& b) {
@@ -124,7 +124,8 @@ void sett_begin() {
     db.init(kk::bright, 20);
     db.init(kk::color, 0);
     db.init(kk::mode, 0);
-    
+    db.init(kk::dnd, false);
+
 
     // wifi
     WiFiConnector.onConnect([]() {
@@ -222,5 +223,9 @@ String mqttPass() {
 
 bool offline() {
     return (bool)db[kk::offline];
+}
+
+bool dnd() {
+    return (bool)db[kk::dnd];
 }
 }  // namespace cfg
