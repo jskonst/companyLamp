@@ -30,9 +30,23 @@ String mqttUser();
 String mqttPass();
 bool offline();
 bool dnd();
+uint8_t pomo_work();
+uint8_t pomo_short();
+uint8_t pomo_long();
+uint8_t pomo_count();
+uint8_t pomo_color();
+uint8_t pomo_break_color();
+uint8_t pomo_bg();
 }
 
 String mqttStatusString();
+String pomoStateString();
+const char* pomoActionLabel();
+const char* pomoSkipLabel();
+void pomodoroWebTick();
+void pomodoroClick(uint8_t clicks);
+void pomodoroWebAction();
+void pomodoroWebSkip();
 
 DB_KEYS(
     kk,
@@ -52,5 +66,12 @@ DB_KEYS(
     mqtt_user,
     mqtt_pass,
     offline,
-    dnd
+    dnd,
+    pomo_work,
+    pomo_short,
+    pomo_long,
+    pomo_count,
+    pomo_color,
+    pomo_break_color,
+    pomo_bg
 );

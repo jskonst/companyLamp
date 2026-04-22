@@ -1,16 +1,5 @@
 #include "sets.h"
 
-#define BTN_MIN_BRIGHT 5
-
-static int8_t _lampBrightDir = 10;
-
-static void togglePowerSafe() {
-  const bool nextPower = !cfg::power();
-  db[kk::power] = nextPower;
-  if (nextPower && cfg::bright() == 0) db[kk::bright] = 20;
-  db.update();
-}
-
 void brightLoop(uint8_t from, uint8_t to, uint8_t step) {
   int val = from;
   while (true) {
@@ -29,7 +18,7 @@ void brightLoop(uint8_t from, uint8_t to, uint8_t step) {
 
 void lampWink() {
   if (!cfg::power()) return;
-  const uint8_t bright = map(cfg::bright(), 0, 100, 0, 255);
+  const uint8_t bright = globalBrightness255();
   brightLoop(bright, 0, 20);
   brightLoop(0, 255, 20);
   brightLoop(255, 0, 20);
@@ -45,13 +34,12 @@ void renderLamp() {
   if (!tmr.period()) return;
 
   bool power = cfg::power();
-  uint8_t bright = power ? map(cfg::bright(), 0, 100, 0, 255) : 0;
-  uint8_t color  = cfg::color();
+  uint8_t color = cfg::color();
 
   CRGB target;
-  if (!power)        target = CRGB::Black;
+  if (!power)          target = CRGB::Black;
   else if (color == 0) target = CRGB::White;
-  else               target = CHSV(color, 255, 255);
+  else                 target = CHSV(color, 255, 255);
 
   if (currentColor != target) {
     currentColor.r += (int16_t)(target.r - currentColor.r) * 17 / 255;
@@ -63,29 +51,15 @@ void renderLamp() {
   }
 
   fill_solid(leds, LED_AMOUNT, currentColor);
-  FastLED.setBrightness(bright);
+  applyGlobalBrightness();
   showLedsSafe();
 }
 
 void lampClick(uint8_t clicks) {
-  if (clicks == 1) {
-    togglePowerSafe();
-  } else if (clicks == 2) {
+  if (clicks == 2) {
     db[kk::color] = (uint8_t)(cfg::color() + 32);
     db.update();
   }
   // clicks 3/4/5 перехватываются глобально в button.ino (смена режима)
   // lampWink() доступна для вызова из web UI
-}
-
-void lampStep() {
-  int newBright = constrain((int)cfg::bright() + _lampBrightDir, BTN_MIN_BRIGHT, 100);
-  db[kk::bright] = (uint8_t)newBright;
-  DEBUG(F("[LAMP] step bright=")); DEBUGLN(newBright);
-}
-
-void lampReleaseStep() {
-  _lampBrightDir = -_lampBrightDir;
-  db.update();
-  DEBUG(F("[LAMP] releaseStep saved bright=")); DEBUGLN(cfg::bright());
 }

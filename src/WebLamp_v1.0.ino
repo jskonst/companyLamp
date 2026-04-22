@@ -121,6 +121,8 @@ void loop() {
   sett_loop();
   mqttTick();
   meetingTick();
+  pomodoroTick();
+  pomodoroWebTick();
   modeWebTick();
   modeIndicatorTick();
 

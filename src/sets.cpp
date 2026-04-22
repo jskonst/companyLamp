@@ -26,8 +26,28 @@ static void buildLamp(sets::Builder& b) {
 }
 
 static void buildPomodoro(sets::Builder& b) {
-    sets::Group g(b, "Помодоро");
-    b.Label("Реализуется в Plan 10");
+    {
+        sets::Group g(b, "Управление");
+        b.Label(pomoStateString().c_str());
+        if (b.Button(pomoActionLabel())) {
+            pomodoroWebAction();
+            b.reload();
+        }
+        if (pomoSkipLabel() && b.Button(pomoSkipLabel())) {
+            pomodoroWebSkip();
+            b.reload();
+        }
+    }
+    {
+        sets::Group g(b, "Настройки");
+        b.Input(kk::pomo_work,  "Работа (мин)");
+        b.Input(kk::pomo_short, "Короткий перерыв (мин)");
+        b.Input(kk::pomo_long,  "Длинный перерыв (мин)");
+        b.Input(kk::pomo_count, "Помодоро до длинного");
+        b.Slider(kk::pomo_color,       "Цвет работы",        0, 255, 1);
+        b.Slider(kk::pomo_break_color, "Цвет перерыва",       0, 255, 1);
+        b.Slider(kk::pomo_bg,          "Цвет фона",          0, 255, 1);
+    }
 }
 
 static void buildMood(sets::Builder& b) {
@@ -120,12 +140,18 @@ void sett_begin() {
     db.init(kk::mqtt_pass, "");
     db.init(kk::offline,   false);
     db.init(kk::ip, "0.0.0.0");
-    db.init(kk::power, 0);
+    db.init(kk::power, 1);
     db.init(kk::bright, 20);
     db.init(kk::color, 0);
     db.init(kk::mode, 0);
     db.init(kk::dnd, false);
-
+    db.init(kk::pomo_work,  (uint8_t)25);
+    db.init(kk::pomo_short, (uint8_t)5);
+    db.init(kk::pomo_long,  (uint8_t)15);
+    db.init(kk::pomo_count, (uint8_t)4);
+    db.init(kk::pomo_color,       (uint8_t)0);
+    db.init(kk::pomo_break_color, (uint8_t)160);
+    db.init(kk::pomo_bg,          (uint8_t)0);
 
     // wifi
     WiFiConnector.onConnect([]() {
@@ -227,5 +253,33 @@ bool offline() {
 
 bool dnd() {
     return (bool)db[kk::dnd];
+}
+
+uint8_t pomo_work() {
+    return (uint8_t)db[kk::pomo_work];
+}
+
+uint8_t pomo_short() {
+    return (uint8_t)db[kk::pomo_short];
+}
+
+uint8_t pomo_long() {
+    return (uint8_t)db[kk::pomo_long];
+}
+
+uint8_t pomo_count() {
+    return (uint8_t)db[kk::pomo_count];
+}
+
+uint8_t pomo_color() {
+    return (uint8_t)db[kk::pomo_color];
+}
+
+uint8_t pomo_break_color() {
+    return (uint8_t)db[kk::pomo_break_color];
+}
+
+uint8_t pomo_bg() {
+    return (uint8_t)db[kk::pomo_bg];
 }
 }  // namespace cfg

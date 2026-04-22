@@ -11,11 +11,18 @@ void renderDND() {
 
   if (!tmr.period()) return;
 
+  if (!cfg::power()) {
+    fill_solid(leds, LED_AMOUNT, CRGB::Black);
+    FastLED.setBrightness(0);
+    showLedsSafe();
+    return;
+  }
+
   if (!cfg::dnd()) {
     fill_solid(leds, LED_AMOUNT, CRGB::Black);
     for (uint8_t i = DND_SECTION_BASE; i < DND_SECTION_BASE + DND_SECTION_LEN; i++)
       leds[i] = CRGB(30, 0, 0);
-    FastLED.setBrightness(40);
+    applyGlobalBrightness();
     showLedsSafe();
     return;
   }
@@ -25,18 +32,10 @@ void renderDND() {
   if (breath <= 30)  { breath = 30;  dir =  1; }
 
   fill_solid(leds, LED_AMOUNT, CRGB::Red);
-  FastLED.setBrightness(breath);
+  applyGlobalBrightness((uint8_t)map(breath, 0, 100, 0, 255));
   showLedsSafe();
 }
 
-void dndClick(uint8_t clicks) {
-  if (clicks != 1) return;
-  bool next = !cfg::dnd();
-  db[kk::dnd] = next;
-  db.update();
-  if (mqtt.connected() && !cfg::offline()) publishDND(next);
-  DEBUG(F("[DND] ")); DEBUGLN(next ? "ON" : "OFF");
-}
-
+void dndClick(uint8_t clicks) { (void)clicks; }
 void dndStep() {}
 void dndReleaseStep() {}

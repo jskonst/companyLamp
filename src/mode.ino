@@ -46,6 +46,38 @@ bool isModeIndicatorActive() {
 
 static uint8_t _prevDbMode = 255;
 
+// ─── global brightness / power ───────────────────────────────────────────────
+
+static int8_t _brightDir = 10;
+
+void togglePowerGlobal() {
+  const bool nextPower = !cfg::power();
+  db[kk::power] = nextPower;
+  if (nextPower && cfg::bright() == 0) db[kk::bright] = BTN_MIN_BRIGHT;
+  db.update();
+}
+
+uint8_t globalBrightness255() {
+  return (uint8_t)map(cfg::bright(), 0, 100, 0, 255);
+}
+
+void applyGlobalBrightness(uint8_t effectScale255) {
+  uint16_t v = (uint16_t)globalBrightness255() * effectScale255 / 255;
+  FastLED.setBrightness((uint8_t)v);
+}
+
+void globalBrightStep() {
+  int newBright = constrain((int)cfg::bright() + _brightDir, BTN_MIN_BRIGHT, 100);
+  db[kk::bright] = (uint8_t)newBright;
+  DEBUG(F("[BRIGHT] step=")); DEBUGLN(newBright);
+}
+
+void globalBrightReleaseStep() {
+  _brightDir = -_brightDir;
+  db.update();
+  DEBUG(F("[BRIGHT] saved=")); DEBUGLN(cfg::bright());
+}
+
 void modeWebTick() {
     uint8_t current = (uint8_t)db[kk::mode];
     if (_prevDbMode != current) {

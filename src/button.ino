@@ -25,6 +25,10 @@ static void handleButtonClicks(uint8_t clicks) {
     DEBUG(F("[BTN] mode next -> ")); DEBUGLN(next);
     return;
   }
+  if (clicks == 1) {
+    togglePowerGlobal();
+    return;
+  }
   switch (currentMode()) {
     case Mode::LAMP:     lampClick(clicks);     break;
     case Mode::POMODORO: pomodoroClick(clicks); break;
@@ -105,17 +109,9 @@ void buttonTick() {
   }
 
   if (btn.step()) {
-    switch (currentMode()) {
-      case Mode::LAMP: lampStep(); break;
-      case Mode::MOOD: moodStep(); break;
-      default: break;
-    }
+    globalBrightStep();
   }
   if (btn.releaseStep()) {
-    switch (currentMode()) {
-      case Mode::LAMP: lampReleaseStep(); break;
-      case Mode::MOOD: moodReleaseStep(); break;
-      default: break;
-    }
+    globalBrightReleaseStep();
   }
 }

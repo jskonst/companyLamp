@@ -7,7 +7,7 @@ void renderMood() {
   if (initialized) return;
   initialized = true;
   fill_solid(leds, LED_AMOUNT, CRGB(0, 200, 0));
-  FastLED.setBrightness(60);
+  applyGlobalBrightness();
   showLedsSafe();
 }
 
