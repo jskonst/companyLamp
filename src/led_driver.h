@@ -74,3 +74,5 @@ class FastLEDClass {
 
 extern FastLEDClass FastLED;
 
+void showCustomIndicator(CRGB color, uint8_t brightness, uint16_t ms);
+

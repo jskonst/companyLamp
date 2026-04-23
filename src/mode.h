@@ -8,7 +8,8 @@ enum class Mode : uint8_t {
   MOOD     = 2,
   DND      = 3,
 };
-constexpr uint8_t MODE_COUNT = 4;
+constexpr uint8_t MODE_COUNT  = 4;  // total modes
+constexpr uint8_t CYCLE_COUNT = 3;  // modes reachable via 3-click cycling
 
 // Minimum brightness (%) — keeps background colors visible at lowest hold setting
 #define BTN_MIN_BRIGHT 20

@@ -1,4 +1,5 @@
 #include "sets.h"
+#include "mode.h"
 
 #include <LittleFS.h>
 #include <WiFiConnector.h>
@@ -55,14 +56,14 @@ static void buildMood(sets::Builder& b) {
     b.Label("Реализуется в Plan 08");
 }
 
-static void buildMeeting(sets::Builder& b) {
-    sets::Group g(b, "Митинг");
-    b.Label("Реализуется в Plan 09");
-}
-
 static void buildDND(sets::Builder& b) {
     sets::Group g(b, "Не беспокоить");
     b.Switch(kk::dnd, "Не беспокоить");
+}
+
+static void buildMeeting(sets::Builder& b) {
+    sets::Group g(b, "Митинг");
+    b.Label("Реализуется в Plan 09");
 }
 
 static void buildWifi(sets::Builder& b) {
@@ -93,16 +94,17 @@ static void buildWifi(sets::Builder& b) {
 
 // ========== build ==========
 static void build(sets::Builder& b) {
-    if (b.Tabs(kk::mode, "LAMP;POMODORO;MOOD;DND")) {
-        // Tabs change db[kk::mode], force page rebuild so mode-specific controls refresh immediately.
-        b.reload();
-    }
-
-    switch ((uint8_t)db[kk::mode]) {
-        case 0: buildLamp(b);     break;
-        case 1: buildPomodoro(b); break;
-        case 2: buildMood(b);     break;
-        case 3: buildDND(b);      break;
+    if ((uint8_t)db[kk::mode] == (uint8_t)Mode::DND) {
+        buildDND(b);
+    } else {
+        if (b.Tabs(kk::mode, "LAMP;POMODORO;MOOD")) {
+            b.reload();
+        }
+        switch ((uint8_t)db[kk::mode]) {
+            case 0: buildLamp(b);     break;
+            case 1: buildPomodoro(b); break;
+            case 2: buildMood(b);     break;
+        }
     }
 
     {
@@ -144,6 +146,7 @@ void sett_begin() {
     db.init(kk::bright, 20);
     db.init(kk::color, 0);
     db.init(kk::mode, 0);
+    if ((uint8_t)db[kk::mode] >= MODE_COUNT) { db[kk::mode] = (uint8_t)0; db.update(); }
     db.init(kk::dnd, false);
     db.init(kk::pomo_work,  (uint8_t)25);
     db.init(kk::pomo_short, (uint8_t)5);

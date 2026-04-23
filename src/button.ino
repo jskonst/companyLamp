@@ -12,14 +12,13 @@ static void handleButtonClicks(uint8_t clicks) {
     return;
   }
   if (clicks == 4) {
-    uint8_t prev = ((uint8_t)currentMode() + MODE_COUNT - 1) % MODE_COUNT;
-    setMode((Mode)prev);
-    showModeIndicator((Mode)prev);
-    DEBUG(F("[BTN] mode prev -> ")); DEBUGLN(prev);
+    toggleDND();
     return;
   }
   if (clicks == 3) {
-    uint8_t next = ((uint8_t)currentMode() + 1) % MODE_COUNT;
+    uint8_t cur  = (uint8_t)currentMode();
+    if (cur >= CYCLE_COUNT) cur = 0;
+    uint8_t next = (cur + 1) % CYCLE_COUNT;
     setMode((Mode)next);
     showModeIndicator((Mode)next);
     DEBUG(F("[BTN] mode next -> ")); DEBUGLN(next);
@@ -33,7 +32,7 @@ static void handleButtonClicks(uint8_t clicks) {
     case Mode::LAMP:     lampClick(clicks);     break;
     case Mode::POMODORO: pomodoroClick(clicks); break;
     case Mode::MOOD:     moodClick(clicks);     break;
-    case Mode::DND:      dndClick(clicks);      break;
+    case Mode::DND:                             break;
   }
 }
 

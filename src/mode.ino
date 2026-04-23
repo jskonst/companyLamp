@@ -2,11 +2,10 @@
 #include "sets.h"
 #include "mode.h"
 
-const CRGB MODE_COLORS[MODE_COUNT] = {
+const CRGB MODE_COLORS[CYCLE_COUNT] = {
   CRGB(255, 200, 100),  // LAMP:     тёплый белый
   CRGB(255, 80,  0  ),  // POMODORO: оранжевый
   CRGB(0,   200, 0  ),  // MOOD:     зелёный (заменяется реальным цветом команды)
-  CRGB(200, 0,   0  ),  // DND:      красный
 };
 
 Mode currentMode() {
@@ -21,12 +20,25 @@ void setMode(Mode m) {
 static uint32_t _modeIndUntil = 0;
 static bool _modeIndActive = false;
 
-static constexpr uint8_t LEDS_PER_MODE = LED_AMOUNT / MODE_COUNT;  // 24/4 = 6
+static constexpr uint8_t LEDS_PER_MODE = LED_AMOUNT / CYCLE_COUNT;  // 24/3 = 8
+
+void showCustomIndicator(CRGB color, uint8_t brightness, uint16_t ms) {
+  fill_solid(leds, LED_AMOUNT, color);
+  FastLED.setBrightness(brightness);
+  showLedsSafe();
+  _modeIndActive = true;
+  _modeIndUntil = millis() + ms;
+}
 
 void showModeIndicator(Mode m) {
+  if ((uint8_t)m >= MODE_COUNT) return;
   fill_solid(leds, LED_AMOUNT, CRGB::Black);
-  uint8_t base = (uint8_t)m * LEDS_PER_MODE;
-  for (uint8_t i = base; i < base + LEDS_PER_MODE; i++) leds[i] = MODE_COLORS[(uint8_t)m];
+  if (m == Mode::DND) {
+    fill_solid(leds, LED_AMOUNT, CRGB::Red);
+  } else {
+    uint8_t base = (uint8_t)m * LEDS_PER_MODE;
+    for (uint8_t i = base; i < base + LEDS_PER_MODE; i++) leds[i] = MODE_COLORS[(uint8_t)m];
+  }
   FastLED.setBrightness(80);
   showLedsSafe();
   _modeIndActive = true;
