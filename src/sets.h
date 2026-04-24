@@ -37,6 +37,7 @@ uint8_t pomo_count();
 uint8_t pomo_color();
 uint8_t pomo_break_color();
 uint8_t pomo_bg();
+uint8_t mood();
 }
 
 String mqttStatusString();
@@ -73,5 +74,7 @@ DB_KEYS(
     pomo_count,
     pomo_color,
     pomo_break_color,
-    pomo_bg
+    pomo_bg,
+    mood,
+    mood_date
 );

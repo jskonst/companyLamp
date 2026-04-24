@@ -53,7 +53,7 @@ static void buildPomodoro(sets::Builder& b) {
 
 static void buildMood(sets::Builder& b) {
     sets::Group g(b, "Настроение");
-    b.Label("Реализуется в Plan 08");
+    b.Slider(kk::mood, "Настроение (0=красный, 120=зелёный)", 0, 120, 1);
 }
 
 static void buildDND(sets::Builder& b) {
@@ -155,6 +155,8 @@ void sett_begin() {
     db.init(kk::pomo_color,       (uint8_t)0);
     db.init(kk::pomo_break_color, (uint8_t)160);
     db.init(kk::pomo_bg,          (uint8_t)0);
+    db.init(kk::mood,             (uint8_t)120);
+    db.init(kk::mood_date,        (uint32_t)0);
 
     // wifi
     WiFiConnector.onConnect([]() {
@@ -284,5 +286,9 @@ uint8_t pomo_break_color() {
 
 uint8_t pomo_bg() {
     return (uint8_t)db[kk::pomo_bg];
+}
+
+uint8_t mood() {
+    return (uint8_t)db[kk::mood];
 }
 }  // namespace cfg

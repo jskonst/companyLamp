@@ -9,3 +9,6 @@ struct RemoteLamp {
     bool     pir;
     bool online() const { return (uint32_t)(millis() - lastSeen) < 18000UL; }
 };
+
+uint8_t            mqttRemoteCount();
+const RemoteLamp&  mqttRemote(uint8_t i);

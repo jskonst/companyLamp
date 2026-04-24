@@ -3,7 +3,14 @@
     "allow": [
       "Bash(pio run *)",
       "WebFetch(domain:github.com)",
-      "Bash(git clone *)"
+      "Bash(git clone *)",
+      "Bash(~/.platformio/penv/Scripts/pio.exe run *)",
+      "Bash(~/.platformio/penv/Scripts/pio run *)",
+      "Bash(cmd /c \"cd /d d:\\\\Users\\\\jskonst\\\\Documents\\\\PlatformIO\\\\Projects\\\\251205-232620-d1_mini && pio run 2>&1\")",
+      "PowerShell(cd \"D:\\\\Users\\\\jskonst\\\\Documents\\\\PlatformIO\\\\Projects\\\\251205-232620-d1_mini\"; & \"$env:USERPROFILE\\\\.platformio\\\\penv\\\\Scripts\\\\pio.exe\" run 2>&1 | Select-Object -Last 60)",
+      "PowerShell(cd \"D:\\\\Users\\\\jskonst\\\\Documents\\\\PlatformIO\\\\Projects\\\\251205-232620-d1_mini\"; & \"$env:USERPROFILE\\\\.platformio\\\\penv\\\\Scripts\\\\pio.exe\" run 2>&1 | Select-Object -Last 20)",
+      "PowerShell(cd \"D:\\\\Users\\\\jskonst\\\\Documents\\\\PlatformIO\\\\Projects\\\\251205-232620-d1_mini\"; & \"$env:USERPROFILE\\\\.platformio\\\\penv\\\\Scripts\\\\pio.exe\" run 2>&1 | Select-Object -Last 10)",
+      "Bash(\"C:/Users/jskonst/.platformio/penv/Scripts/pio.exe\" run *)"
     ]
   }
 }

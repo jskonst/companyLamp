@@ -128,6 +128,11 @@ static void connectMQTT() {
     DEBUGLN(topic);
 }
 
+// ─── remote access ───────────────────────────────────────────────────────────
+
+uint8_t mqttRemoteCount() { return remoteCount; }
+const RemoteLamp& mqttRemote(uint8_t i) { return remotes[i]; }
+
 // ─── public API ──────────────────────────────────────────────────────────────
 
 void mqttBegin() {
