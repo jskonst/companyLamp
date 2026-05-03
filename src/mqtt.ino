@@ -105,7 +105,9 @@ static void connectMQTT() {
     if ((uint32_t)(millis() - lastAttempt) < 5000) return;
     lastAttempt = millis();
 
-    mqtt.setServer(cfg::host().c_str(), cfg::port());
+    static char hostBuf[64] = {};
+    strncpy(hostBuf, cfg::host().c_str(), sizeof(hostBuf) - 1);
+    mqtt.setServer(hostBuf, cfg::port());
 
     String id = "WebLamp-" + String(random(0xffffff), HEX);
     String user = cfg::mqttUser();

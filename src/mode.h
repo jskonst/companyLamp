@@ -14,6 +14,7 @@ constexpr uint8_t CYCLE_COUNT = 3;  // modes reachable via 3-click cycling
 // Minimum brightness (%) — keeps background colors visible at lowest hold setting
 #define BTN_MIN_BRIGHT 20
 
+void toggleDND();
 void togglePowerGlobal();
 uint8_t globalBrightness255();
 void applyGlobalBrightness(uint8_t effectScale255 = 255);

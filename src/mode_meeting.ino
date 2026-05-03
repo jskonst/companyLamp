@@ -1,12 +1,18 @@
 #include "led_driver.h"
 #include "sets.h"
 
-static void showMeetingFlash() {
+static void showMeetingFlash(bool allowWhenOff) {
   uint8_t color = cfg::color();
   CRGB c = (color == 0) ? CRGB::White : (CRGB)CHSV(color, 255, 255);
 
-  uint8_t base = cfg::power() ? map(cfg::bright(), 0, 100, 0, 255) : 0;
-  uint8_t peak = (uint8_t)min((uint16_t)base + 26u, 255u);  // +10% от 255
+  uint8_t restore = cfg::power() ? globalBrightness255() : 0;
+  uint8_t base = restore;
+  if (!cfg::power() && allowWhenOff) {
+    base = (uint8_t)max((uint16_t)globalBrightness255(), (uint16_t)map(BTN_MIN_BRIGHT, 0, 100, 0, 255));
+  }
+  if (base == 0) return;
+
+  uint8_t peak = (uint8_t)min((uint16_t)base + 26u, 255u);
 
   fill_solid(leds, LED_AMOUNT, c);
   FastLED.setBrightness(base);
@@ -17,13 +23,13 @@ static void showMeetingFlash() {
     brightLoop(peak, base, 2);
   }
 
-  FastLED.setBrightness(base);
+  FastLED.setBrightness(restore);
   showLedsSafe();
 }
 
 void meetingQuickCall() {
   DEBUGLN(F("[MTG] quick-call"));
-  showMeetingFlash();
+  showMeetingFlash(true);
   if (!cfg::offline() && mqtt.connected()) {
     publishMeeting();
     DEBUGLN(F("[MTG] published"));
@@ -34,6 +40,10 @@ void meetingTick() {
   String sender;
   if (takeMeetingSignal(sender)) {
     DEBUG(F("[MTG] incoming from ")); DEBUGLN(sender);
-    showMeetingFlash();
+    if (!cfg::dndWink()) {
+      DEBUGLN(F("[MTG] wink ignored by settings"));
+      return;
+    }
+    showMeetingFlash(true);
   }
 }

@@ -30,6 +30,7 @@ String mqttUser();
 String mqttPass();
 bool offline();
 bool dnd();
+bool dndWink();
 uint8_t pomo_work();
 uint8_t pomo_short();
 uint8_t pomo_long();
@@ -68,6 +69,7 @@ DB_KEYS(
     mqtt_pass,
     offline,
     dnd,
+    dnd_wink,
     pomo_work,
     pomo_short,
     pomo_long,

@@ -108,11 +108,9 @@ void buttonTick() {
   }
 
   if (btn.step()) {
-    if (currentMode() == Mode::MOOD) moodStep();
-    else globalBrightStep();
+    globalBrightStep();
   }
   if (btn.releaseStep()) {
-    if (currentMode() == Mode::MOOD) moodReleaseStep();
-    else globalBrightReleaseStep();
+    globalBrightReleaseStep();
   }
 }

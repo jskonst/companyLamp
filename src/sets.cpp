@@ -53,12 +53,18 @@ static void buildPomodoro(sets::Builder& b) {
 
 static void buildMood(sets::Builder& b) {
     sets::Group g(b, "Настроение");
+    b.Switch(kk::power, "Питание");
+    b.Slider(kk::bright, "Яркость", 0, 100, 1);
     b.Slider(kk::mood, "Настроение (0=красный, 120=зелёный)", 0, 120, 1);
 }
 
 static void buildDND(sets::Builder& b) {
     sets::Group g(b, "Не беспокоить");
-    b.Switch(kk::dnd, "Не беспокоить");
+    if (b.Switch(kk::dnd, "Не беспокоить")) {
+        toggleDND();
+        b.reload();
+    }
+    b.Switch(kk::dnd_wink, "Принимать wink-сигналы");
 }
 
 static void buildMeeting(sets::Builder& b) {
@@ -87,6 +93,7 @@ static void buildWifi(sets::Builder& b) {
         b.Input(kk::mqtt_user, "Логин брокера",    "");
         b.Pass(kk::mqtt_pass,  "Пароль брокера",   "");
         b.Switch(kk::offline,  "Офлайн-режим");
+        b.Switch(kk::dnd_wink, "Принимать wink-сигналы");
         b.Label(mqttStatusString().c_str());
         if (b.Button("Обновить")) b.reload();
     }
@@ -148,6 +155,7 @@ void sett_begin() {
     db.init(kk::mode, 0);
     if ((uint8_t)db[kk::mode] >= MODE_COUNT) { db[kk::mode] = (uint8_t)0; db.update(); }
     db.init(kk::dnd, false);
+    db.init(kk::dnd_wink, true);
     db.init(kk::pomo_work,  (uint8_t)25);
     db.init(kk::pomo_short, (uint8_t)5);
     db.init(kk::pomo_long,  (uint8_t)15);
@@ -258,6 +266,10 @@ bool offline() {
 
 bool dnd() {
     return (bool)db[kk::dnd];
+}
+
+bool dndWink() {
+    return (bool)db[kk::dnd_wink];
 }
 
 uint8_t pomo_work() {
