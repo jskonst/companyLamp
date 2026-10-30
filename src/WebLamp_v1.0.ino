@@ -37,7 +37,10 @@
 
 // ============= БИБЛЫ =============
 #include <EEPROM.h>
-#include <ESP8266WiFi.h> //Delete
+#include <ESP8266WiFi.h>
+#include <DNSServer.h>
+#include <GyverPortal.h>
+#include <EEManager.h>
 #include <PubSubClient.h>
 #include <FastLED.h>
 #define EB_STEP 100   // период step шага кнопки
@@ -59,7 +62,7 @@ struct LampData {
   char pass[32] = "";
   char local[20] = "AG_lamp_1";
   char remote[20] = "AG_lamp_2";
-  char host[32] = "broker.mqttdashboard.com";
+  char host[32] = "broker.mqttdashboard.com";  // настраивается в портале
   uint16_t port = 1883;
   uint8_t ip[4] = {0, 0, 0, 0};
 
@@ -73,8 +76,8 @@ EncButtonT<BTN_PIN, 0, 0> btn;
 CRGB leds[LED_AMOUNT];
 WiFiClient espClient;
 PubSubClient mqtt(espClient);
-// GyverPortal portal;
-// EEManager memory(data);
+GyverPortal portal;
+EEManager memory(data);
 
 bool pirFlag = 0;
 bool winkFlag = 0;
@@ -93,10 +96,11 @@ void loop() {
   if (USE_PIR && digitalRead(PIR_PIN)) pirFlag = 1;  // опрос ИК датчика
   
   heartbeat();    // отправляем пакет что мы онлайн
-  // memory.tick();  // проверяем обновление настроек
-  animation();    // эффект ленты
-  buttonTick();   // действия кнопки
-  mqttTick();     // проверяем входящие
-  // portal.tick();  // пинаем портал
-  // checkPortal();  // проверяем действия
+  memory.tick();  // проверяем обновление настроек
+  wifiTick();     // STA в фоне, AP если роутера нет (не блокирует)
+  animation();    // эффект ленты (+ неблокирующее подмигивание)
+  buttonTick();   // действия кнопки — работают всегда, даже без Wi-Fi
+  mqttTick();     // неблокирующий MQTT
+  portal.tick();  // локальный веб-интерфейс (STA IP / 192.168.4.1 / companylamp.local)
+  checkPortal();  // проверяем действия
 }

@@ -1,30 +1,16 @@
-// подмигнуть
+// подмигнуть: запускаем неблокирующую анимацию, её ведёт animation()
+uint32_t winkStartMs = 0;
 void wink() {
-  if (data.power) {
-    brightLoop(data.bright, 0, 20);
-    brightLoop(0, 255, 20);
-    brightLoop(255, 0, 20);
-    brightLoop(0, 255, 20);
-    brightLoop(255, 0, 20);
-    brightLoop(0, data.bright, 20);
-  }
+  if (data.power) winkStartMs = millis() | 1;
 }
 
-// костыльно, но куда деваться
-void brightLoop(int from, int to, int step) {
-  int val = from;
-  for (;;) {
-    FastLED.setBrightness(val);
-    FastLED.show();
-    delay(10);
-    if (from > to) {
-      val -= step;
-      if (val < to) return;
-    } else {
-      val += step;
-      if (val > to) return;
-    }
-  }
+// яркость подмигивания: 2 вспышки 0..255 за ~1.2 с, 0 = подмигивание закончилось
+static int winkBright() {
+  if (!winkStartMs) return -1;
+  uint32_t t = millis() - winkStartMs;
+  if (t > 1200) { winkStartMs = 0; return -1; }
+  uint32_t ph = t % 600;  // 300 мс вниз, 300 вверх
+  return ph < 300 ? 255 - ph * 255 / 300 : (ph - 300) * 255 / 300;
 }
 
 // выводим эффект на ленту
@@ -49,35 +35,22 @@ void animation() {
 
     // здесь делаем плавные переходы между цветами
     CRGB ncol = CHSV(data.color, 255, curBr);
-    CRGB ccol = leds[0];
+    CRGB ccol = leds[LED_AMOUNT - 1];  // leds[0] занят индикатором AP
     if (ccol != ncol) ccol = blend(ccol, ncol, 17);
 
     // выводим на ленту
     fill_solid(leds, LED_AMOUNT, ccol);
-    FastLED.setBrightness(data.bright);
+    // индикатор точки доступа: первый светодиод мигает синим, пока поднята AP
+    if (apActive() && (millis() / 500) % 2) leds[0] = CRGB::Blue;
+    int wb = winkBright();
+    extern uint32_t maxFlashMs;
+    uint8_t br = data.bright;
+    if (wb >= 0) br = wb;
+    else if (maxFlashMs && millis() - maxFlashMs < 150) br = 0;
+    FastLED.setBrightness(br);
     FastLED.show();
   }
 }
-
-// локальный запуск портала. При любом исходе заканчивается ресетом платы
-// void localPortal(IPAddress ip) {
-//   // создаём точку с именем WLamp и предыдущим успешным IP
-//   Serial.println(F("Create AP"));
-//   WiFi.mode(WIFI_AP);
-//   String s(F("WLamp "));
-//   s += ip.toString();
-//   WiFi.softAP(s);
-
-//   portal.start("WLamp");    // запускаем портал
-//   while (portal.tick()) {   // портал работает
-//     loadAnimation(CRGB::Blue);      // мигаем синим
-//     btn.tick();
-//     // если нажали сохранить настройки или кликнули по кнопке
-//     // перезагружаем ESP
-//     if (checkPortal() || btn.click()) ESP.reset();
-//   }
-// }
-
 
 // анимация работы локал портала
 void loadAnimation(CRGB color) {

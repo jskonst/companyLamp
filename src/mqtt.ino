@@ -8,13 +8,21 @@
 // опрашиваем mqtt
 void mqttTick() {
   if (WiFi.status() != WL_CONNECTED) return;  // wifi не подключен
-  if (!mqtt.connected()) connectMQTT();
-  else {
-    if (!startFlag) {
-      startFlag = 1;
-      char str[] = MQTT_HEADER "2";  // +2
-      mqtt.publish(data.remote, str);
+  if (!mqtt.connected()) {
+    startFlag = 0;
+    static uint32_t lastTry = 0;
+    // переподключение не чаще раза в 7 с, connect с таймаутом 2 с, без delay
+    if (!lastTry || millis() - lastTry > 7000) {
+      lastTry = millis();
+      connectMQTT();
     }
+    return;
+  }
+  if (!startFlag) {
+    startFlag = 1;
+    char str[] = MQTT_HEADER "2";  // +2 запрос состояния у удалённой
+    mqtt.publish(data.remote, str);
+    sendPacket();                  // и публикуем своё после переподключения
   }
   mqtt.loop();
 }
@@ -26,13 +34,15 @@ void connectMQTT() {
   //DEBUGLN(id);
   // подписываемся на своё имя
   if (mqtt.connect(id.c_str())) mqtt.subscribe(data.local);
-  delay(1000);
 }
 
 // тут нам прилетел пакет от удалённой лампы
 void callback(char* topic, byte* payload, uint16_t len) {
-  payload[len] = '\0';        // закрываем строку
-  char* str = (char*)payload; // для удобства
+  char buf[48];                // копия с нулём в конце (payload[len] — выход за буфер)
+  if (len >= sizeof(buf)) len = sizeof(buf) - 1;
+  memcpy(buf, payload, len);
+  buf[len] = '\0';
+  char* str = buf;
   DEBUGLN(str);
   // не наш пакет, выходим
   if (strncmp(str, MQTT_HEADER, hLen)) return;
@@ -47,7 +57,7 @@ void callback(char* topic, byte* payload, uint16_t len) {
     case 1:   // управление
       data.power = getFromIndex(str, 1);
       data.color = getFromIndex(str, 2);
-      if (getFromIndex(str, 3)) wink();
+      if (getFromIndex(str, 3)) wink();  // неблокирующе, см. animation()
       break;
 
     case 2:   // запрос
@@ -70,6 +80,7 @@ void sendPacket() {
   s += ',';
   s += winkFlag;
   winkFlag = 0;
+  if (!mqtt.connected()) return;  // офлайн — только локально
   // отправляем
   mqtt.publish(data.remote, s.c_str());
 }
@@ -80,6 +91,6 @@ void heartbeat() {
     char str[hLen + 4] = MQTT_HEADER "0,";  // +0,
     str[hLen + 2] = pirFlag + '0';
     pirFlag = 0;
-    mqtt.publish(data.remote, str);
+    if (mqtt.connected()) mqtt.publish(data.remote, str);
   }
 }
