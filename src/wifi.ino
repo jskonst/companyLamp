@@ -16,8 +16,8 @@ bool staWasUp = false;
 bool hasCreds() { return data.ssid[0] != '\0'; }
 
 String apName() {
-  char buf[20];
-  snprintf(buf, sizeof(buf), "WLamp-%06X", ESP.getChipId());
+  char buf[24];
+  snprintf(buf, sizeof(buf), "companyLamp-%06X", ESP.getChipId());
   return String(buf);
 }
 
@@ -80,7 +80,11 @@ void wifiTick() {
     staOkMs = now;
     startFlag = 0;                // запросить состояние у удалённой лампы
     DEBUG(F("STA IP: ")); DEBUGLN(WiFi.localIP());
-    for (int i = 0; i < 4; i++) data.ip[i] = WiFi.localIP()[i];
+    IPAddress ip = WiFi.localIP();
+    if (data.ip[0] != ip[0] || data.ip[1] != ip[1] || data.ip[2] != ip[2] || data.ip[3] != ip[3]) {
+      for (int i = 0; i < 4; i++) data.ip[i] = ip[i];
+      memory.update();
+    }
   } else if (!up && staWasUp) {   // потеряли связь
     staWasUp = false;
     staLostMs = now;

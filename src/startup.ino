@@ -1,6 +1,6 @@
 void startup() {
   delay(1000);
-  Serial.begin(9600);         // запускаем сериал для отладки
+  Serial.begin(115200);         // запускаем сериал для отладки
   portal.attachBuild(build);  // подключаем интерфейс
 
   EEPROM.begin(sizeof(data) + 1); // +1 на ключ
@@ -37,7 +37,7 @@ void startup() {
   wifiBegin(forceAP);
 
   // портал работает на любом интерфейсе (STA и AP) на порту 80
-  portal.start("wlamp");
+  portal.start("companylamp");  // mDNS: http://companylamp.local
 
   FastLED.setBrightness(data.bright);
 }

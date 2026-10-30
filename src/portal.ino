@@ -30,7 +30,8 @@ bool checkPortal() {
   if (portal.form()) {
     if (portal.form("/save")) {
       portal.copyStr("ssid", data.ssid);
-      portal.copyStr("pass", data.pass);
+      String p = portal.getString("pass");
+      if (p.length()) p.toCharArray(data.pass, sizeof(data.pass));  // пусто = не менять
       portal.copyStr("local", data.local);
       portal.copyStr("remote", data.remote);
       portal.copyStr("host", data.host);

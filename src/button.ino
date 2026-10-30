@@ -1,3 +1,5 @@
+uint32_t maxFlashMs = 0;
+
 void buttonTick() {
   btn.tick();
 
@@ -22,14 +24,7 @@ void buttonTick() {
   static int8_t dir = 10;
   if (btn.step()) {
     data.bright = constrain(data.bright + dir, 0, 255);
-    if (data.bright == 255) {
-      FastLED.setBrightness(0);
-      FastLED.show();
-      delay(150);
-      FastLED.setBrightness(255);
-      FastLED.show();
-      delay(150);
-    }
+    if (data.bright == 255) maxFlashMs = millis();  // мигнуть на максимуме без delay — ведёт animation()
   }
   if (btn.releaseStep()) {
     dir = -dir;

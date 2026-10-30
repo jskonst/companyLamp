@@ -8,13 +8,16 @@
 // опрашиваем mqtt
 void mqttTick() {
   if (WiFi.status() != WL_CONNECTED) return;  // wifi не подключен
-  if (!mqtt.connected()) connectMQTT();
-  else {
-    if (!startFlag) {
-      startFlag = 1;
-      char str[] = MQTT_HEADER "2";  // +2
-      mqtt.publish(data.remote, str);
-    }
+  if (!mqtt.connected()) {
+    startFlag = 0;   // после переподключения снова синхронизируемся
+    connectMQTT();   // не чаще раза в 5 с, таймаут 2 с
+    return;
+  }
+  if (!startFlag) {
+    startFlag = 1;
+    char str[] = MQTT_HEADER "2";  // +2 запрос состояния удалённой
+    mqtt.publish(data.remote, str);
+    sendPacket();                  // и публикуем своё состояние
   }
   mqtt.loop();
 }
@@ -34,8 +37,11 @@ void connectMQTT() {
 
 // тут нам прилетел пакет от удалённой лампы
 void callback(char* topic, byte* payload, uint16_t len) {
-  payload[len] = '\0';        // закрываем строку
-  char* str = (char*)payload; // для удобства
+  char buf[48];               // копия с нулём: payload[len] — выход за буфер PubSubClient
+  if (len >= sizeof(buf)) len = sizeof(buf) - 1;
+  memcpy(buf, payload, len);
+  buf[len] = '\0';
+  char* str = buf;
   DEBUGLN(str);
   // не наш пакет, выходим
   if (strncmp(str, MQTT_HEADER, hLen)) return;
