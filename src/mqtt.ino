@@ -25,8 +25,11 @@ void connectMQTT() {
   id += String(random(0xffffff), HEX);
   //DEBUGLN(id);
   // подписываемся на своё имя
+  // без delay(): иначе при недоступном брокере тормозит кнопка и портал
+  static uint32_t lastTry = 0;
+  if (lastTry && millis() - lastTry < 5000) return;
+  lastTry = millis();
   if (mqtt.connect(id.c_str())) mqtt.subscribe(data.local);
-  delay(1000);
 }
 
 // тут нам прилетел пакет от удалённой лампы
@@ -70,6 +73,7 @@ void sendPacket() {
   s += ',';
   s += winkFlag;
   winkFlag = 0;
+  if (!mqtt.connected()) return;  // офлайн: локально уже применено
   // отправляем
   mqtt.publish(data.remote, s.c_str());
 }
@@ -80,6 +84,6 @@ void heartbeat() {
     char str[hLen + 4] = MQTT_HEADER "0,";  // +0,
     str[hLen + 2] = pirFlag + '0';
     pirFlag = 0;
-    mqtt.publish(data.remote, str);
+    if (mqtt.connected()) mqtt.publish(data.remote, str);
   }
 }

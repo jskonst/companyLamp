@@ -7,11 +7,11 @@ void buttonTick() {
     if (clicks == 1) {   // вкл выкл
       data.power = !data.power;
       sendPacket();
-      // memory.update();
+      memory.update();
     } else if (clicks == 2) {   // сменить цвет
       data.color += 32;
       sendPacket();
-      // memory.update();
+      memory.update();
     } else if (clicks == 3) {   // подмигнуть
       winkFlag = 1;
       sendPacket();
@@ -33,6 +33,6 @@ void buttonTick() {
   }
   if (btn.releaseStep()) {
     dir = -dir;
-    // memory.update();
+    memory.update();
   }
 }

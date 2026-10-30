@@ -17,13 +17,15 @@
 #define IGNORE_PIR 0  // 1 - игнорировать сигнал PIR (ИК датчика) с удалённой лампы
 
 /*
-  Запуск:
-  Клик или >15 секунд при анимации подклчения: запустить точку доступа
-  Кнопка сохранить или клик: перезагрузить систему
+  Запуск (не блокирует — лампа управляется всегда):
+  - Есть сохранённая сеть: подключаемся в фоне. Если за 15 с нет IP
+    или связь пропала — поднимается точка доступа WLamp-XXXXXX (192.168.4.1).
+  - Нет сохранённой сети: точка доступа сразу.
+  - Клик в первые 2 с после включения: принудительно включить точку доступа.
+  - Пока работает точка, раз в 30 с пробуем снова подключиться к роутеру.
+    Через 60 с стабильного STA без клиентов точка выключается.
 
-  Анимация:
-  - Мигает зелёным: подключение к роутеру
-  - Мигает синим: запущена точка доступа WLamp <IP>
+  Анимация при старте: 2 с мигает зелёным (окно для клика).
 
   Работа:
   1 клик: вкл/выкл
@@ -37,7 +39,10 @@
 
 // ============= БИБЛЫ =============
 #include <EEPROM.h>
-#include <ESP8266WiFi.h> //Delete
+#include <ESP8266WiFi.h>
+#include <DNSServer.h>
+#include <GyverPortal.h>
+#include <EEManager.h>
 #include <PubSubClient.h>
 #include <FastLED.h>
 #define EB_STEP 100   // период step шага кнопки
@@ -73,9 +78,11 @@ EncButtonT<BTN_PIN, 0, 0> btn;
 CRGB leds[LED_AMOUNT];
 WiFiClient espClient;
 PubSubClient mqtt(espClient);
-// GyverPortal portal;
-// EEManager memory(data);
+GyverPortal portal;
+EEManager memory(data);
 
+DNSServer dns;          // captive DNS для точки доступа
+bool apActive = false;  // поднята ли точка доступа
 bool pirFlag = 0;
 bool winkFlag = 0;
 bool startFlag = 0;
@@ -93,10 +100,11 @@ void loop() {
   if (USE_PIR && digitalRead(PIR_PIN)) pirFlag = 1;  // опрос ИК датчика
   
   heartbeat();    // отправляем пакет что мы онлайн
-  // memory.tick();  // проверяем обновление настроек
+  wifiTick();     // STA реконнект + управление точкой доступа (не блокирует)
+  memory.tick();  // проверяем обновление настроек
   animation();    // эффект ленты
   buttonTick();   // действия кнопки
   mqttTick();     // проверяем входящие
-  // portal.tick();  // пинаем портал
-  // checkPortal();  // проверяем действия
+  portal.tick();  // веб-интерфейс работает и по STA, и по точке доступа
+  checkPortal();  // проверяем действия
 }
