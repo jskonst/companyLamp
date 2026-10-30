@@ -9,7 +9,7 @@ SettingsGyver sett(PROJECT_NAME, &db);
 static bool settings_started = false;
 
 static String makeAPName() {
-    String ip = String(db[kk::ip]);
+    String ip = db[kk::ip];
     if (!ip.length() || ip == "0.0.0.0") return String(PROJECT_NAME);
 
     String name(PROJECT_NAME);
@@ -173,7 +173,7 @@ void sett_begin() {
         Serial.print("Connected: ");
         Serial.println(ip);
 
-        if (String(db[kk::ip]) != ip) {
+        if (db[kk::ip] != ip) {
             db[kk::ip] = ip;
             db.update();
         }
@@ -221,19 +221,19 @@ uint8_t color() {
 }
 
 String ssid() {
-    return String(db[kk::ssid]);
+    return db[kk::ssid];
 }
 
 String pass() {
-    return String(db[kk::pass]);
+    return db[kk::pass];
 }
 
 String local() {
-    return String(db[kk::local]);
+    return db[kk::local];
 }
 
 String host() {
-    return String(db[kk::host]);
+    return db[kk::host];
 }
 
 uint16_t port() {
@@ -241,7 +241,7 @@ uint16_t port() {
 }
 
 String ip() {
-    return String(db[kk::ip]);
+    return db[kk::ip];
 }
 
 bool close_ap() {
@@ -249,15 +249,15 @@ bool close_ap() {
 }
 
 String group() {
-    return String(db[kk::group]);
+    return db[kk::group];
 }
 
 String mqttUser() {
-    return String(db[kk::mqtt_user]);
+    return db[kk::mqtt_user];
 }
 
 String mqttPass() {
-    return String(db[kk::mqtt_pass]);
+    return db[kk::mqtt_pass];
 }
 
 bool offline() {
