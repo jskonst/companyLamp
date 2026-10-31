@@ -84,4 +84,4 @@ function shade_d(z) = SHADE_LOWER_D - (SHADE_LOWER_D-SHADE_TOP_D)*z/SHADE_H;
 POWER_C   = [0, POWER_Y2 - (POWER_PCB.y+2.4)/2];
 BATT_C    = [0, POWER_C.y - (POWER_PCB.y+2.4)/2 - BAY_GAP - (BATT_BAY.x+2.4)/2];
 LOLIN_C   = [0, BATT_C.y - (BATT_BAY.x+2.4)/2 - BAY_GAP - LOLIN.y/2];
-USBC_Z    = FLOOR + POWER_FRAME_H + POWER_PCB.z + USBC_BODY_H/2;   // ось окна USB-C
+USBC_Z    = BAY_H - POWER_FRAME_H - POWER_PCB.z - USBC_BODY_H/2;   // ось окна USB-C (плата висит под палубой, разъём снизу)
