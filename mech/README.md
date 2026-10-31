@@ -4,6 +4,8 @@
 
 Библиотека: [BOSL2](https://github.com/BelfrySCAD/BOSL2), лежит в `mech/lib/BOSL2` (из списка openscad.org/libraries). Используются `tube`, `cyl`, `cuboid`, `prismoid`, `rect_tube`, `zrot_copies`, `grid_copies`, `torus`.
 
+В `mech/lib/BOSL2` оставлены только `std.scad`, файлы, которые он подключает, `builtins.scad` и `LICENSE`. Для других модулей BOSL2 (threading, joiners и т.д.) скопируйте нужный файл из апстрима.
+
 ## Файлы
 - `scad/params.scad` — все размеры, оценки помечены `[EST]`.
 - `scad/lamp.scad` — модули и сборка, `PART = assembly | exploded | base | cover | pipe | led_ring`.
