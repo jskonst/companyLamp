@@ -10,9 +10,13 @@ DECK = BAY_H + FLOOR;   // верх палубы основания = дно п�
 // заходит на SEAT_DEPTH. На стакане снаружи буртик под зубья кольца.
 module seat() {
     tube(h=SEAT_DEPTH, od=COLLAR_OD, id=GROOVE_OD, anchor=BOT);
-    tube(h=LIP_H, od=GROOVE_ID, wall=1.6, anchor=BOT);
+    difference() {
+        tube(h=LIP_H, od=GROOVE_ID, wall=1.6, anchor=BOT);
+        // вырез в бортике под провода ленты
+        zrot(WIRE_ANG) right(GROOVE_ID/2) cuboid([8, WIRE_NOTCH, 3*LIP_H]);
+    }
     // буртик с фаской сверху (зубья набегают), снизу полка 90°
-    up(1.2) cyl(h=1.8, d1=COLLAR_OD+2*BEAD, d2=COLLAR_OD, anchor=BOT);
+    up(BEAD_Z) cyl(h=BEAD*1.2, d1=COLLAR_OD+2*BEAD, d2=COLLAR_OD, anchor=BOT);
 }
 
 // Прижимное кольцо (по CaseCap.scad, резьба заменена N защёлками):
@@ -26,9 +30,9 @@ module latch_ring() {
     }
     zrot_copies(n=N_SNAPS) {
         // лапка: от низа кольца до низа буртика
-        right(ARM_R) up(0.9) cuboid([SNAP_T, SNAP_W, z0-0.9+0.6], rounding=0.4, edges="Z", anchor=BOT+LEFT);
+        right(ARM_R) up(BEAD_Z-0.1-HOOK_H) cuboid([SNAP_T, SNAP_W, z0-BEAD_Z+0.1+HOOK_H+0.6], rounding=0.4, edges="Z", anchor=BOT+LEFT);
         // зуб внутрь под буртик, фаска захода снизу
-        right(ARM_R) up(1.15) prismoid(size1=[0.01, SNAP_W], size2=[SNAP_HOOK+SNAP_GAP, SNAP_W], h=1.2, shift=[-(SNAP_HOOK+SNAP_GAP)/2,0], anchor=TOP+RIGHT);
+        right(ARM_R+0.01) up(BEAD_Z-0.1) prismoid(size1=[0.01, SNAP_W], size2=[SNAP_HOOK, SNAP_W], h=HOOK_H, shift=[-SNAP_HOOK/2,0], anchor=TOP+RIGHT);
     }
 }
 
@@ -41,6 +45,8 @@ module base() {
             up(DECK) e14_decor();
         }
         down(1) cyl(h=DECK+E14_H+5, d=CABLE_D, anchor=BOT);
+        // проход проводов ленты между кольцом 86 и бортиком
+        zrot(WIRE_ANG) right((LED_RING_OD/2 + GROOVE_ID/2-1.6)/2) up(BAY_H-1) cyl(h=FLOOR+3, d=WIRE_D, anchor=BOT);
         pipe_path() cyl(h=60, d=PIPE_D+0.3, anchor=CENTER);
         up(BAY_H/2) fwd(BASE_BOT_D/2) xrot(90) cyl(h=20, d=BTN_D, anchor=CENTER);
         up(USBC_Z) right(POWER_C.x+USBC_X) back(BASE_BOT_D/2) cuboid([USBC.x, 30, USBC.y], rounding=1.2, edges="Y");
