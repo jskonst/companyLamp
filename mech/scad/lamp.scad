@@ -36,7 +36,7 @@ module base() {
         // кнопка на передней (-Y) стенке
         up(BAY_H/2) fwd(BASE_BOT_D/2) xrot(90) cyl(h=20, d=BTN_D, anchor=CENTER);
         // USB-C на задней (+Y) стенке
-        up(FLOOR+STANDOFF_H+2) back(BASE_BOT_D/2) cuboid([USBC.x, 20, USBC.y], rounding=1.2, edges="Y");
+        up(USBC_Z) right(POWER_C.x+USBC_X) back(BASE_BOT_D/2) cuboid([USBC.x, 30, USBC.y], rounding=1.2, edges="Y");
         // вентиляция над зарядкой (задняя стенка)
         for (i=[0:VENT_SLOTS-1]) zrot(-30 + i*10) up(BAY_H*0.6) back(BASE_BOT_D/2)
             cuboid([2, 20, BAY_H*0.5], rounding=1, edges="Y");
@@ -74,23 +74,27 @@ module cover() {
         back(25) xcopies(n=5, spacing=5) cuboid([2, 18, 10], rounding=1, edges="Z");
     }
     up(FLOOR) {
-        tube(h=6, od=d, wall=1.6, anchor=BOT);
+        // центрирующее кольцо крышки с вырезом под рамку платы питания и USB-C
+        difference() {
+            tube(h=6, od=d, wall=1.6, anchor=BOT);
+            back(d/2) cuboid([POWER_PCB.x+6, 12, 20]);
+        }
         // защёлки крышки (3 шт.)
         zrot_copies(n=3) right(d/2) up(4) prismoid([0.01,8],[1.2,8], h=2, shift=[0.6,0], anchor=BOT+LEFT);
         // Lolin: 4 стойки M2 h=STANDOFF_H
-        fwd(22) left(15) grid_copies(spacing=LOLIN_HOLES, n=[2,2]) tube(h=STANDOFF_H, od=5, id=1.8, anchor=BOT);
+        move(LOLIN_C) grid_copies(spacing=LOLIN_HOLES, n=[2,2]) tube(h=STANDOFF_H, od=5, id=1.8, anchor=BOT);
         // площадка питания (TP4056+boost): рамка с упорами
-        back(20) rect_tube(size=[POWER_PCB.x+2.4, POWER_PCB.y+2.4], wall=1.2, h=4, anchor=BOT);
+        move(POWER_C) rect_tube(size=[POWER_PCB.x+2.4, POWER_PCB.y+2.4], wall=1.2, h=POWER_FRAME_H, anchor=BOT);
         // стяжка: петля для фиксации входного провода (strain relief)
-        back(40) left(20) difference() { cuboid([6,8,6], anchor=BOT); up(1.5) cuboid([7,4,2.2], anchor=BOT); }
-        if (WITH_BATTERY) right(28) zrot(90)
+        back(40) left(30) difference() { cuboid([6,8,6], anchor=BOT); up(1.5) cuboid([7,4,2.2], anchor=BOT); }
+        if (WITH_BATTERY) move(BATT_C)
             rect_tube(size=[BATT_BAY.y+2.4, BATT_BAY.x+2.4], wall=1.2, h=BATT_BAY.z*0.6, anchor=BOT);
     }
 }
 
-module lolin_dummy() color("dodgerblue") up(FLOOR+STANDOFF_H) fwd(22) left(15) cuboid(LOLIN, anchor=BOT);
-module power_dummy() color("darkred") up(FLOOR+4) back(20) cuboid(POWER_PCB, anchor=BOT);
-module batt_dummy() if (WITH_BATTERY) color("green") up(FLOOR+1) right(28) ycyl(h=65, d=18.5, anchor=BOT);
+module lolin_dummy() color("dodgerblue") up(FLOOR+STANDOFF_H) move(LOLIN_C) cuboid(LOLIN, anchor=BOT);
+module power_dummy() color("darkred") up(FLOOR+POWER_FRAME_H) move(POWER_C) { cuboid(POWER_PCB, anchor=BOT); color("silver") up(POWER_PCB.z) back(POWER_PCB.y/2-3.5) right(USBC_X) cuboid([8.9,7.5,USBC_BODY_H], rounding=1.4, edges="Y", anchor=BOT); }
+module batt_dummy() if (WITH_BATTERY) color("green") up(FLOOR+1) move(BATT_C) xcyl(h=BATT_CELL[1], d=BATT_CELL[0], anchor=BOT);
 
 module shade() color("white", 0.35) up(BAY_H+FLOOR) difference() {
     cyl(h=SHADE_H, d1=SHADE_LOWER_D, d2=SHADE_TOP_D, rounding2=8, anchor=BOT);
