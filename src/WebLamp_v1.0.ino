@@ -10,10 +10,10 @@
 
 #define LED_PIN 14    // пин ленты
 #define BTN_PIN 16    // пин кнопки
-#define PIR_PIN D5    // пин PIR (ИК датчика)
+#define PIR_PIN D6    // пин PIR (ИК датчика): D6 = GPIO12. НЕ D5 — D5 = GPIO14 = данные ленты (LED_PIN)
 #define LED_AMOUNT 24 // кол-вл светодиодов
 #define BTN_LEVEL 1   // 1 - кнопка подключает VCC, 0 - подключает GND
-#define USE_PIR 0     // 1 - использовать PIR (ИК датчик) на этой лампе
+#define USE_PIR 0     // 1 - использовать PIR (ИК датчик) на этой лампе; по умолчанию выключен
 #define IGNORE_PIR 0  // 1 - игнорировать сигнал PIR (ИК датчика) с удалённой лампы
 
 /*
