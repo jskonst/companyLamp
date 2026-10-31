@@ -1,30 +1,16 @@
-// подмигнуть
+// подмигнуть: неблокирующе, анимацию ведёт animation() (было: brightLoop с delay ~1 с)
+uint32_t winkStartMs = 0;
 void wink() {
-  if (data.power) {
-    brightLoop(data.bright, 0, 20);
-    brightLoop(0, 255, 20);
-    brightLoop(255, 0, 20);
-    brightLoop(0, 255, 20);
-    brightLoop(255, 0, 20);
-    brightLoop(0, data.bright, 20);
-  }
+  if (data.power) winkStartMs = millis() | 1;
 }
 
-// костыльно, но куда деваться
-void brightLoop(int from, int to, int step) {
-  int val = from;
-  for (;;) {
-    FastLED.setBrightness(val);
-    FastLED.show();
-    delay(10);
-    if (from > to) {
-      val -= step;
-      if (val < to) return;
-    } else {
-      val += step;
-      if (val > to) return;
-    }
-  }
+// яркость подмигивания: 2 вспышки за 1.2 с; -1 = не подмигиваем
+int winkBright() {
+  if (!winkStartMs) return -1;
+  uint32_t t = millis() - winkStartMs;
+  if (t > 1200) { winkStartMs = 0; return -1; }
+  uint32_t ph = t % 600;
+  return ph < 300 ? 255 - ph * 255 / 300 : (ph - 300) * 255 / 300;
 }
 
 // выводим эффект на ленту
@@ -49,12 +35,19 @@ void animation() {
 
     // здесь делаем плавные переходы между цветами
     CRGB ncol = CHSV(data.color, 255, curBr);
-    CRGB ccol = leds[0];
+    CRGB ccol = leds[LED_AMOUNT - 1];  // leds[0] может быть индикатором AP
     if (ccol != ncol) ccol = blend(ccol, ncol, 17);
 
     // выводим на ленту
     fill_solid(leds, LED_AMOUNT, ccol);
-    FastLED.setBrightness(data.bright);
+    // индикатор точки доступа: первый светодиод мигает синим
+    if (apActive && (millis() / 500) % 2) leds[0] = CRGB::Blue;
+    extern uint32_t maxFlashMs;
+    int wb = winkBright();
+    uint8_t br = data.bright;
+    if (wb >= 0) br = wb;
+    else if (maxFlashMs && millis() - maxFlashMs < 150) br = 0;
+    FastLED.setBrightness(br);
     FastLED.show();
   }
 }

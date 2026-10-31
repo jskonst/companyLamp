@@ -8,13 +8,16 @@
 // опрашиваем mqtt
 void mqttTick() {
   if (WiFi.status() != WL_CONNECTED) return;  // wifi не подключен
-  if (!mqtt.connected()) connectMQTT();
-  else {
-    if (!startFlag) {
-      startFlag = 1;
-      char str[] = MQTT_HEADER "2";  // +2
-      mqtt.publish(data.remote, str);
-    }
+  if (!mqtt.connected()) {
+    startFlag = 0;   // после переподключения снова синхронизируемся
+    connectMQTT();   // не чаще раза в 5 с, таймаут 2 с
+    return;
+  }
+  if (!startFlag) {
+    startFlag = 1;
+    char str[] = MQTT_HEADER "2";  // +2 запрос состояния удалённой
+    mqtt.publish(data.remote, str);
+    sendPacket();                  // и публикуем своё состояние
   }
   mqtt.loop();
 }
@@ -25,14 +28,20 @@ void connectMQTT() {
   id += String(random(0xffffff), HEX);
   //DEBUGLN(id);
   // подписываемся на своё имя
+  // без delay(): иначе при недоступном брокере тормозит кнопка и портал
+  static uint32_t lastTry = 0;
+  if (lastTry && millis() - lastTry < 5000) return;
+  lastTry = millis();
   if (mqtt.connect(id.c_str())) mqtt.subscribe(data.local);
-  delay(1000);
 }
 
 // тут нам прилетел пакет от удалённой лампы
 void callback(char* topic, byte* payload, uint16_t len) {
-  payload[len] = '\0';        // закрываем строку
-  char* str = (char*)payload; // для удобства
+  char buf[48];               // копия с нулём: payload[len] — выход за буфер PubSubClient
+  if (len >= sizeof(buf)) len = sizeof(buf) - 1;
+  memcpy(buf, payload, len);
+  buf[len] = '\0';
+  char* str = buf;
   DEBUGLN(str);
   // не наш пакет, выходим
   if (strncmp(str, MQTT_HEADER, hLen)) return;
@@ -70,6 +79,7 @@ void sendPacket() {
   s += ',';
   s += winkFlag;
   winkFlag = 0;
+  if (!mqtt.connected()) return;  // офлайн: локально уже применено
   // отправляем
   mqtt.publish(data.remote, s.c_str());
 }
@@ -80,6 +90,6 @@ void heartbeat() {
     char str[hLen + 4] = MQTT_HEADER "0,";  // +0,
     str[hLen + 2] = pirFlag + '0';
     pirFlag = 0;
-    mqtt.publish(data.remote, str);
+    if (mqtt.connected()) mqtt.publish(data.remote, str);
   }
 }
