@@ -1,0 +1,11 @@
+# Скопируйте в tls.conf после выпуска сертификата Let's Encrypt
+# (это делает install.sh при заданных DOMAIN и EMAIL).
+# Не коммитьте tls.conf с боевыми путями, если они отличаются; пример — можно.
+
+listener 8883
+protocol mqtt
+certfile /mosquitto/certs/fullchain.pem
+keyfile /mosquitto/certs/privkey.pem
+require_certificate false
+# TLS 1.2 достаточно; ESP8266 и так тяжело тянет шифрование.
+tls_version tlsv1.2

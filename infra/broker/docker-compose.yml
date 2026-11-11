@@ -1,0 +1,29 @@
+name: companylamp-broker
+
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2.0.22
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+      # Слушатель 8883 включается только при наличии conf.d/tls.conf (см. install.sh и DOMAIN).
+      - "8883:8883"
+    volumes:
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./conf.d:/mosquitto/config/conf.d:ro
+      - ./config:/mosquitto/auth
+      - ./data:/mosquitto/data
+      - ./log:/mosquitto/log
+      - ./certs:/mosquitto/certs:ro
+    mem_limit: 128m
+    healthcheck:
+      test: ["CMD-SHELL", "pidof mosquitto >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

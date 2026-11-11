@@ -1,0 +1,16 @@
+# Рабочие данные брокера — не коммитить.
+/config/
+/data/
+/log/
+/certs/
+/conf.d/tls.conf
+
+# На всякий случай, если файлы окажутся не в своих папках
+passwd
+acl
+!acl.example
+*.pem
+*.key
+*.crt
+*.db
+mosquitto.log
