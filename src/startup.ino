@@ -13,6 +13,7 @@ void startup() {
 
   // настраиваем уровень кнопки
   btn.setButtonLevel(BTN_LEVEL);
+  if (USE_PIR) pinMode(PIR_PIN, INPUT);  // PIR на D6/GPIO12
 
   // 2 секунды, чтобы юзер успел кликнуть и принудительно включить точку доступа
   bool forceAP = false;
