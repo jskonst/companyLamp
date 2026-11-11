@@ -13,6 +13,11 @@ extern SettingsGyver sett;
 void sett_begin();
 void sett_loop();
 bool sett_started();
+void noteStaConnected();
+void wifiMaintain();
+void wifiPauseSta();
+void wifiResumeSta();
+void otaTick();
 
 namespace cfg {
 uint8_t bright();

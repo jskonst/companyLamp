@@ -23,7 +23,6 @@
 #define MQTT_HEADER "GWL:"
 
 #include <ESP8266WiFi.h>
-#include <PubSubClient.h>
 #include "led_driver.h"
 #define EB_STEP_TIME 100
 #include <EncButton.h>
@@ -51,8 +50,6 @@ constexpr uint8_t BTN_PIN_MODE = INPUT;
 #endif
 ButtonT<BTN_PIN> btn(BTN_PIN_MODE, BTN_LEVEL);
 CRGB leds[LED_AMOUNT];
-WiFiClient espClient;
-PubSubClient mqtt(espClient);
 
 #if SERIAL_BTN_TEST
 bool serialVisualOverride = false;
@@ -118,8 +115,10 @@ void loop() {
   buttonSerialTestTick();
 #endif
   buttonTick();
+  wifiMaintain();
   sett_loop();
   mqttTick();
+  otaTick();
   meetingTick();
   pomodoroTick();
   pomodoroWebTick();

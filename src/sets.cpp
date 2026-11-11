@@ -1,12 +1,41 @@
 #include "sets.h"
 #include "mode.h"
+#include "mqtt.h"
 
 #include <LittleFS.h>
+#include <DNSServer.h>
 #include <WiFiConnector.h>
 
 GyverDBFile db(&LittleFS, "/data.db");
 SettingsGyver sett(PROJECT_NAME, &db);
 static bool settings_started = false;
+
+// sett.begin() зовётся до подъёма AP, и DNS библиотеки запомнил бы 0.0.0.0.
+// Свой сервер стартует, когда у точки уже есть адрес, и перезапускается, если он сменился.
+static DNSServer captiveDns;
+static bool captiveOn = false;
+static IPAddress captiveIp;
+
+static void captiveTick() {
+    const WiFiMode_t mode = WiFi.getMode();
+    const bool ap = mode == WIFI_AP || mode == WIFI_AP_STA;
+    const IPAddress ip = ap ? WiFi.softAPIP() : IPAddress((uint32_t)0);
+    if (ap && ip != IPAddress((uint32_t)0)) {
+        if (!captiveOn || captiveIp != ip) {
+            if (captiveOn) captiveDns.stop();
+            captiveDns.setErrorReplyCode(DNSReplyCode::NoError);
+            captiveDns.start(53, "*", ip);
+            captiveOn = true;
+            captiveIp = ip;
+            Serial.print(F("Captive DNS: "));
+            Serial.println(ip);
+        }
+        captiveDns.processNextRequest();
+    } else if (captiveOn) {
+        captiveDns.stop();
+        captiveOn = false;
+    }
+}
 
 static String makeAPName() {
     String ip = db[kk::ip];
@@ -82,6 +111,7 @@ static void buildWifi(sets::Builder& b) {
             WiFiConnector.closeAP(db[kk::close_ap]);
         }
         if (b.Button("Подключиться")) {
+            wifiResumeSta();
             WiFiConnector.connect(db[kk::ssid], db[kk::pass]);
         }
     }
@@ -92,6 +122,10 @@ static void buildWifi(sets::Builder& b) {
         b.Input(kk::group,     "Группа",           "office");
         b.Input(kk::mqtt_user, "Логин брокера",    "");
         b.Pass(kk::mqtt_pass,  "Пароль брокера",   "");
+        {
+            String idLine = String(F("ID: ")) + lampId();
+            b.Label(idLine.c_str());
+        }
         b.Switch(kk::offline,  "Офлайн-режим");
         b.Switch(kk::dnd_wink, "Принимать wink-сигналы");
         b.Label(mqttStatusString().c_str());
@@ -168,16 +202,7 @@ void sett_begin() {
 
     // wifi
     WiFiConnector.onConnect([]() {
-        const String ip = WiFi.localIP().toString();
-
-        Serial.print("Connected: ");
-        Serial.println(ip);
-
-        if (db[kk::ip] != ip) {
-            db[kk::ip] = ip;
-            db.update();
-        }
-        WiFiConnector.setName(makeAPName());
+        noteStaConnected();
     });
     WiFiConnector.onError([]() {
         Serial.print("Error. Start AP: ");
@@ -189,7 +214,8 @@ void sett_begin() {
     WiFiConnector.closeAP(db[kk::close_ap]);
 
     // settings
-    sett.begin();
+    // false: DNS captive поднимаем сами, когда AP уже имеет IP (см. captiveTick).
+    sett.begin(false);
     sett.onBuild(build);
     sett.onUpdate(update);
 
@@ -200,11 +226,25 @@ void sett_begin() {
 void sett_loop() {
     if (!settings_started) return;
     WiFiConnector.tick();
+    captiveTick();
     sett.tick();
 }
 
 bool sett_started() {
     return settings_started;
+}
+
+void noteStaConnected() {
+    const String ip = WiFi.localIP().toString();
+
+    Serial.print("Connected: ");
+    Serial.println(ip);
+
+    if (db[kk::ip] != ip) {
+        db[kk::ip] = ip;
+        db.update();
+    }
+    WiFiConnector.setName(makeAPName());
 }
 
 namespace cfg {

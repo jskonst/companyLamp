@@ -72,16 +72,37 @@ void FastLEDClass::clear() {
   fill_solid(buffer, ledCount, CRGB::Black);
 }
 
+// WS2812 ≈ 60 мА на полный белый (R+G+B = 765). Кадр не должен просить больше 800 мА при 5 В.
+// NeoPixelBus сам ток не режет: если сумма каналов после яркости выше порога, кадр масштабируется.
+static constexpr uint32_t kMilliampLimit = 800;
+static constexpr uint32_t kMilliampFullWhite = 60;
+static constexpr uint32_t kChannelSumFullWhite = 255ul * 3ul;
+static constexpr uint32_t kLimitChannelSum =
+    kMilliampLimit * kChannelSumFullWhite / kMilliampFullWhite;  // 10200
+
 void FastLEDClass::show() {
   if (!strip || !buffer) return;
 
+  uint32_t sum = 0;
   for (uint16_t i = 0; i < ledCount; i++) {
     const CRGB& c = buffer[i];
-    RgbColor out(
-      scale8(c.r, brightness),
-      scale8(c.g, brightness),
-      scale8(c.b, brightness));
-    strip->SetPixelColor(i, out);
+    sum += scale8(c.r, brightness);
+    sum += scale8(c.g, brightness);
+    sum += scale8(c.b, brightness);
+  }
+  const bool limit = sum > kLimitChannelSum;
+
+  for (uint16_t i = 0; i < ledCount; i++) {
+    const CRGB& c = buffer[i];
+    uint32_t r = scale8(c.r, brightness);
+    uint32_t g = scale8(c.g, brightness);
+    uint32_t b = scale8(c.b, brightness);
+    if (limit) {
+      r = r * kLimitChannelSum / sum;
+      g = g * kLimitChannelSum / sum;
+      b = b * kLimitChannelSum / sum;
+    }
+    strip->SetPixelColor(i, RgbColor((uint8_t)r, (uint8_t)g, (uint8_t)b));
   }
   strip->Show();
 }

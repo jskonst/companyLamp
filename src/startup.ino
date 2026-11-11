@@ -1,6 +1,25 @@
 #include <WiFiConnector.h>
+#include <ArduinoOTA.h>
+
+#ifndef LAMP_OTA_PASS
+#define LAMP_OTA_PASS "companylamp"
+#endif
+static_assert(sizeof(LAMP_OTA_PASS) > 1, "LAMP_OTA_PASS must not be empty");
 
 extern void showLedsSafe();
+
+void otaBegin();
+
+static bool staPaused = false;
+static uint32_t staRetryAt = 0;
+static bool otaStarted = false;
+
+void wifiPauseSta() { staPaused = true; }
+
+void wifiResumeSta() {
+  staPaused = false;
+  staRetryAt = millis();
+}
 
 // ===== startup timing =====
 constexpr uint32_t STARTUP_BOOT_DELAY_MS    = 1000;
@@ -113,9 +132,41 @@ static void startupInitHardware() {
 #endif
 
   sett_begin();
+  WiFi.persistent(false);
+  WiFi.setAutoReconnect(false);
   WiFi.setSleepMode(WIFI_SLEEP_CFG);
   DEBUG(F("WiFi sleep mode: "));
   DEBUGLN((int)WIFI_SLEEP_CFG);
+
+#if USE_PIR
+  pinMode(PIR_PIN, INPUT);
+#endif
+
+  otaBegin();
+}
+
+void otaBegin() {
+  if (otaStarted) return;
+  char host[32];
+  snprintf(host, sizeof(host), "companyLamp-%s", lampId());
+  WiFi.hostname(host);
+  ArduinoOTA.setHostname(host);
+  ArduinoOTA.setPassword(LAMP_OTA_PASS);
+  ArduinoOTA.onStart([]() { DEBUGLN(F("[OTA] start")); });
+  ArduinoOTA.onEnd([]() { DEBUGLN(F("[OTA] end")); });
+  ArduinoOTA.onError([](ota_error_t err) {
+    DEBUG(F("[OTA] err "));
+    DEBUGLN((int)err);
+  });
+  ArduinoOTA.begin();
+  otaStarted = true;
+  DEBUG(F("[OTA] host "));
+  DEBUGLN(host);
+}
+
+void otaTick() {
+  if (!otaStarted) otaBegin();
+  if (otaStarted) ArduinoOTA.handle();
 }
 
 // Returns true if button clicked -> go to AP
@@ -147,30 +198,76 @@ static bool startupTryWifiConnect() {
       showWifiWaitPulse();
     }
 
-    if (startupButtonClicked()) return false;
+    if (startupButtonClicked()) {
+      wifiPauseSta();
+      return false;
+    }
+    otaTick();
   }
 
   return WiFiConnector.connected();
 }
 
-static void startupRunApMode() {
+// AP остаётся поднятой, но лампа не ждёт роутер: после короткой синей индикации
+// работают кнопка и режимы. Повтор STA — в wifiMaintain(), без блокировки loop.
+static void startupRunApMode(bool keepSta) {
   startupLogState(F("AP_MODE"));
-  WiFiConnector.connect("", "");
-  const uint32_t ignoreClicksUntil = millis() + STARTUP_AP_IGNORE_BTN_MS;
-
-  while (!WiFiConnector.connected()) {
-    sett_loop();
-    loadAnimation(CRGB::Blue);
-
-    if ((int32_t)(millis() - ignoreClicksUntil) >= 0 && startupButtonClicked()) {
-      DEBUGLN(F("[STARTUP] AP exit by button -> restart"));
-      ESP.restart();
-    }
-    yield();
+  if (!keepSta) {
+    WiFiConnector.connect("", "");
+  } else if (!WiFiConnector.connecting() && WiFi.status() != WL_CONNECTED) {
+    if (cfg::ssid().length()) WiFiConnector.connect(cfg::ssid(), cfg::pass());
+    else WiFiConnector.connect("", "");
   }
 
-  DEBUGLN(F("[STARTUP] Connected from AP mode"));
-  showWifiConnectedBlink();
+  const uint32_t until = millis() + 2000;
+  const uint32_t ignoreClicksUntil = millis() + STARTUP_AP_IGNORE_BTN_MS;
+  while ((int32_t)(millis() - until) < 0) {
+    sett_loop();
+    otaTick();
+    loadAnimation(CRGB::Blue);
+    if ((int32_t)(millis() - ignoreClicksUntil) >= 0) startupButtonClicked();
+    yield();
+  }
+  staRetryAt = millis();
+}
+
+void wifiMaintain() {
+  if (!sett_started()) return;
+
+  const bool up = WiFi.status() == WL_CONNECTED;
+  static bool wasUp = false;
+  if (up && !wasUp) noteStaConnected();
+  wasUp = up;
+
+  WiFiMode_t mode = WiFi.getMode();
+  const bool apUp = mode == WIFI_AP || mode == WIFI_AP_STA;
+  if (up && cfg::close_ap() && WiFi.softAPgetStationNum() == 0 && apUp) {
+    WiFi.softAPdisconnect(true);
+    if (mode == WIFI_AP_STA) WiFi.mode(WIFI_STA);
+    return;
+  }
+  if (up) return;
+
+  const String ssid = cfg::ssid();
+  if (staPaused || !ssid.length()) {
+    if (!apUp) WiFiConnector.connect("", "");
+    return;
+  }
+  if (WiFiConnector.connecting()) return;
+
+  const uint32_t now = millis();
+  const uint8_t stations = apUp ? WiFi.softAPgetStationNum() : 0;
+  const uint32_t period = stations ? 120000UL : 30000UL;
+  if ((uint32_t)(now - staRetryAt) < period) return;
+  staRetryAt = now;
+
+  // Пока к точке кто-то подключён, softAP заново не поднимаем: телефон на портале не отвалится.
+  if (stations) {
+    if (mode != WIFI_AP_STA) WiFi.mode(WIFI_AP_STA);
+    WiFi.begin(ssid.c_str(), cfg::pass().c_str());
+    return;
+  }
+  WiFiConnector.connect(ssid, cfg::pass());
 }
 
 static void startupFinalize() {
@@ -192,7 +289,12 @@ void startup() {
         break;
 
       case StartupState::WARMUP:
-        state = startupWarmupWindow() ? StartupState::AP_MODE : StartupState::WIFI_CONNECT;
+        if (startupWarmupWindow()) {
+          wifiPauseSta();
+          state = StartupState::AP_MODE;
+        } else {
+          state = StartupState::WIFI_CONNECT;
+        }
         break;
 
       case StartupState::WIFI_CONNECT:
@@ -205,7 +307,7 @@ void startup() {
         break;
 
       case StartupState::AP_MODE:
-        startupRunApMode();
+        startupRunApMode(!staPaused);
         state = StartupState::FINALIZE;
         break;
 
