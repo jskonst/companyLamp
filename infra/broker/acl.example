@@ -1,0 +1,12 @@
+# Пример ACL Mosquitto. Боевой файл config/acl создаёт add-user.sh — не коммитьте его.
+#
+# Пользователь лампы читает и пишет только свою группу
+# (топики lamp/<группа>/<id>/{status,state,wink} из docs/protocol.md):
+#
+# user lamp-home
+# topic readwrite lamp/home/#
+#
+# Администратор (отладка, mosquitto_sub на всю иерархию):
+#
+# user admin
+# topic readwrite #
