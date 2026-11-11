@@ -1,428 +1,591 @@
-/*
-  Групповой MQTT. Форматы — docs/protocol.md, байт в байт.
+#include "mqtt.h"
+#include "sets.h"
 
-  Топики лампы (id — 6 hex-символов chip id):
-    lamp/<group>/<id>/status   retained, QoS 1: online | away | offline
-    lamp/<group>/<id>/state    retained, QoS 1: {"m":75,"n":"Женя"}
-    lamp/<group>/<id>/wink     не retained, QoS 0: {"h":96}
-
-  Подписки: lamp/<group>/+/status|state|wink. Свой id игнорируем.
-  Client id lamp-<id>, clean session, keepalive 15 с.
-  Last Will: offline, retained, QoS 1 — его публикует брокер, своего heartbeat нет.
-
-  Почему не PubSubClient. WiFiClient::connect() в ядре 3.1.2 только шлёт SYN и
-  сразу возвращается. Дальше PubSubClient::connect() ждёт CONNACK до
-  socketTimeout целых секунд (меньше секунды библиотека задать не умеет).
-  Пока брокер недоступен, данных нет, и весь loop стоит это время: кнопка
-  теряет серию кликов, лента замирает. AsyncMqttClient::connect() возвращается
-  сразу, таймаут TCP живёт в стеке. Единственная короткая блокировка — DNS,
-  если адрес ещё не закэширован и кнопка в этот момент свободна
-  (MQTT_DNS_TIMEOUT_MS, по умолчанию 500 мс). Повтор — с удвоением паузы до 30 с.
-*/
-
-static const char* STATUS_ONLINE = "online";
-static const char* STATUS_AWAY = "away";
-static const char* STATUS_OFFLINE = "offline";
-
-bool brokerConfigured() {
-  return validGroupName(data.group) && data.host[0] != '\0';
+extern "C" {
+#include <lwip/tcp.h>
+#include <lwip/dns.h>
 }
 
-void rebuildTopics() {
-  buildLampTopic(topicStatus, sizeof(topicStatus), data.group, lampId, "status");
-  buildLampTopic(topicState, sizeof(topicState), data.group, lampId, "state");
-  buildLampTopic(topicWink, sizeof(topicWink), data.group, lampId, "wink");
-  buildGroupFilter(subStatus, sizeof(subStatus), data.group, "status");
-  buildGroupFilter(subState, sizeof(subState), data.group, "state");
-  buildGroupFilter(subWink, sizeof(subWink), data.group, "wink");
-}
-
-void peersClear() {
-  memset(peers, 0, sizeof(peers));
-  peerCount = 0;
-  peersDirty = true;
-}
-
-void peersDropOnline() {
-  for (int i = 0; i < peerCount; i++) {
-    if (peers[i].status == PeerStatus::Online) peers[i].status = PeerStatus::Offline;
-  }
-  peersDirty = true;
-}
-
-void rebuildPeerText() {
-  int others = 0;
-  for (int i = 0; i < peerCount; i++) {
-    if (peers[i].status == PeerStatus::Online) others++;
-  }
-  bool selfOn = !data.autonomous && mqtt.connected();
-  onlineCount = others + (selfOn ? 1 : 0);
-
-  const char* selfWord = selfOn ? STATUS_ONLINE : (data.autonomous ? STATUS_AWAY : STATUS_OFFLINE);
-  char* cursor = peerText;
-  size_t left = sizeof(peerText);
-  int wrote = snprintf(cursor, left, "онлайн %d (мы %s)\n", onlineCount, selfWord);
-  if (wrote < 0 || (size_t)wrote >= left) {
-    peerText[sizeof(peerText) - 1] = '\0';
-    peersDirty = false;
-    return;
-  }
-  cursor += wrote;
-  left -= (size_t)wrote;
-
-  for (int i = 0; i < peerCount && left > 1; i++) {
-    const char* word = STATUS_OFFLINE;
-    if (peers[i].status == PeerStatus::Online) word = STATUS_ONLINE;
-    else if (peers[i].status == PeerStatus::Away) word = STATUS_AWAY;
-    else if (peers[i].status == PeerStatus::None) word = "?";
-    const char* name = peers[i].name[0] ? peers[i].name : "-";
-    if (peers[i].hasMood) {
-      wrote = snprintf(cursor, left, "%s %s m=%u %s\n", peers[i].id, name, peers[i].mood, word);
-    } else {
-      wrote = snprintf(cursor, left, "%s %s %s\n", peers[i].id, name, word);
+// Неблокирующий TCP: connect() PubSubClient при лежащем брокере иначе держит loop
+// на таймауте сокета. DNS и SYN идут с возвратом в loop, кнопка и лента не ждут.
+class NbClient : public Client {
+ public:
+  bool begin(const char* host, uint16_t port) {
+    stop();
+    if (!host || !host[0] || port == 0) {
+      phase = Phase::Failed;
+      return false;
     }
-    if (wrote < 0 || (size_t)wrote >= left) break;
-    cursor += wrote;
-    left -= (size_t)wrote;
-  }
-  peersDirty = false;
-}
+    this->port = port;
+    strncpy(hostBuf, host, sizeof(hostBuf) - 1);
+    hostBuf[sizeof(hostBuf) - 1] = '\0';
+    dnsEpoch = epoch;
+    phase = Phase::Resolving;
+    started = millis();
 
-int upsertPeer(const char* id) {
-  char canon[7];
-  canonLampId(canon, id);
-  for (int i = 0; i < peerCount; i++) {
-    if (sameLampId(peers[i].id, canon)) return i;
+    IPAddress literal;
+    if (literal.fromString(hostBuf)) {
+      ip_addr_t addr;
+      IP_ADDR4(&addr, literal[0], literal[1], literal[2], literal[3]);
+      startTcp(addr);
+      return phase == Phase::Connecting || phase == Phase::Up;
+    }
+
+    ip_addr_t resolved;
+    err_t err = dns_gethostbyname(hostBuf, &resolved, &NbClient::onDns, this);
+    if (err == ERR_OK) {
+      if (phase == Phase::Resolving) startTcp(resolved);
+      return phase == Phase::Connecting || phase == Phase::Up;
+    }
+    if (err == ERR_INPROGRESS) return true;
+    phase = Phase::Failed;
+    return false;
   }
-  int slot = -1;
-  if (peerCount < PEER_MAX) {
-    slot = peerCount++;
-  } else {
-    for (int i = 0; i < PEER_MAX; i++) {
-      if (peers[i].status != PeerStatus::Online) {
-        slot = i;
-        break;
+
+  bool isIdle() const { return phase == Phase::Idle; }
+  bool isUp() const { return phase == Phase::Up && pcb; }
+  bool isPending() const { return phase == Phase::Resolving || phase == Phase::Connecting; }
+  bool isFailed() const { return phase == Phase::Failed; }
+  bool timedOut() const {
+    if (!isPending()) return false;
+    uint32_t limit = (phase == Phase::Resolving) ? 500UL : 5000UL;
+    return (uint32_t)(millis() - started) > limit;
+  }
+
+  // Пока PubSubClient ждёт CONNACK, available() крутится без yield. Отдаём квант
+  // кнопке и ленте, но не чаще 10 мс: иначе strip и EncButton получают тысячи тиков.
+  void setAppPump(bool on) { pumpApps = on; }
+
+  int connect(IPAddress, uint16_t) override { return isUp() ? 1 : 0; }
+  int connect(const char*, uint16_t) override { return isUp() ? 1 : 0; }
+
+  size_t write(uint8_t b) override { return write(&b, 1); }
+
+  size_t write(const uint8_t* data, size_t size) override {
+    if (!isUp() || !data || !size) return 0;
+    size_t sent = 0;
+    uint32_t t0 = millis();
+    while (sent < size) {
+      size_t space = tcp_sndbuf(pcb);
+      if (!space) {
+        tcp_output(pcb);
+        yield();
+        if ((uint32_t)(millis() - t0) > 30) break;
+        continue;
+      }
+      size_t n = size - sent;
+      if (n > space) n = space;
+      if (tcp_write(pcb, data + sent, n, TCP_WRITE_FLAG_COPY) != ERR_OK) break;
+      sent += n;
+    }
+    if (pcb) tcp_output(pcb);
+    return sent;
+  }
+
+  int available() override {
+    if (pumpApps && !inPump) {
+      uint32_t now = millis();
+      if ((uint32_t)(now - lastPump) >= 10) {
+        lastPump = now;
+        inPump = true;
+        yield();
+        buttonTick();
+        renderTick();
+        otaTick();
+        inPump = false;
+      } else {
+        yield();
       }
     }
+    return (int)rxCount;
   }
-  if (slot < 0) return -1;
-  memset(&peers[slot], 0, sizeof(Peer));
-  memcpy(peers[slot].id, canon, 7);
-  peers[slot].status = PeerStatus::None;
-  return slot;
-}
 
-void rememberStatus(const char* id, PeerStatus status) {
-  if (status == PeerStatus::None) return;
-  int slot = upsertPeer(id);
-  if (slot < 0) return;
-  peers[slot].status = status;
-  peersDirty = true;
-}
-
-void rememberState(const char* id, uint8_t mood, const char* name) {
-  int slot = upsertPeer(id);
-  if (slot < 0) return;
-  peers[slot].mood = mood;
-  peers[slot].hasMood = true;
-  if (name) {
-    strncpy(peers[slot].name, name, sizeof(peers[slot].name) - 1);
-    peers[slot].name[sizeof(peers[slot].name) - 1] = '\0';
+  int read() override {
+    if (!rxCount) return -1;
+    uint8_t b = rx[rxR];
+    rxR = (uint16_t)((rxR + 1) % RX_CAP);
+    rxCount--;
+    return b;
   }
-  peersDirty = true;
-}
 
-bool publishText(const char* topic, uint8_t qos, bool retain, const char* payload) {
-  if (!mqtt.connected() || !payload) return false;
-  uint16_t id = mqtt.publish(topic, qos, retain, payload);
-  return id != 0 || qos == 0;
-}
-
-void publishOnline() {
-  publishText(topicStatus, 1, true, STATUS_ONLINE);
-}
-
-void publishState() {
-  if (data.autonomous || !mqtt.connected()) return;
-  char body[96];
-  if (formatStatePayload(body, sizeof(body), data.mood, data.owner) < 0) return;
-  publishText(topicState, 1, true, body);
-}
-
-void publishWink() {
-  // Автономная лампа не шлёт подмигивания. Своё кольцо тоже не мигает:
-  // вспышка — сигнал остальным, их цвет она не меняет.
-  if (data.autonomous || !mqtt.connected()) return;
-  char body[16];
-  if (formatWinkPayload(body, sizeof(body), moodToHue(data.mood)) < 0) return;
-  publishText(topicWink, 0, false, body);
-}
-
-void beginAway() {
-  uint16_t id = mqtt.publish(topicStatus, 1, true, STATUS_AWAY);
-  if (!id) {
-    mqtt.disconnect(true);
-    awayAnnounced = false;
-    awayWait = false;
-    return;
+  int read(uint8_t* buf, size_t size) override {
+    size_t n = 0;
+    while (n < size) {
+      int b = read();
+      if (b < 0) break;
+      buf[n++] = (uint8_t)b;
+    }
+    return (int)n;
   }
-  awayPkt = id;
-  awayWait = true;
-  awayWaitSince = millis();
+
+  int peek() override { return rxCount ? rx[rxR] : -1; }
+
+  void flush() override {
+    if (!pcb) return;
+    uint32_t t0 = millis();
+    while (tcp_sndbuf(pcb) < TCP_SND_BUF && (uint32_t)(millis() - t0) < 40) {
+      tcp_output(pcb);
+      yield();
+    }
+    tcp_output(pcb);
+  }
+
+  void stop() override {
+    epoch++;
+    pumpApps = false;
+    if (pcb) {
+      tcp_pcb* dying = pcb;
+      pcb = nullptr;
+      tcp_arg(dying, nullptr);
+      tcp_recv(dying, nullptr);
+      tcp_err(dying, nullptr);
+      tcp_sent(dying, nullptr);
+      if (tcp_close(dying) != ERR_OK) tcp_abort(dying);
+    }
+    rxR = rxW = 0;
+    rxCount = 0;
+    phase = Phase::Idle;
+  }
+
+  uint8_t connected() override {
+    return (phase == Phase::Up && pcb && pcb->state == ESTABLISHED) ? 1 : 0;
+  }
+
+  operator bool() override { return connected(); }
+
+ private:
+  enum class Phase : uint8_t { Idle, Resolving, Connecting, Up, Failed };
+
+  static constexpr uint16_t RX_CAP = 512;
+
+  tcp_pcb* pcb = nullptr;
+  Phase phase = Phase::Idle;
+  uint16_t port = 0;
+  uint32_t started = 0;
+  uint8_t epoch = 1;
+  uint8_t dnsEpoch = 0;
+  char hostBuf[64] = {};
+  uint8_t rx[RX_CAP] = {};
+  uint16_t rxR = 0;
+  uint16_t rxW = 0;
+  uint16_t rxCount = 0;
+  bool pumpApps = false;
+  bool inPump = false;
+  uint32_t lastPump = 0;
+
+  void startTcp(const ip_addr_t& addr) {
+    pcb = tcp_new();
+    if (!pcb) {
+      phase = Phase::Failed;
+      return;
+    }
+    tcp_arg(pcb, this);
+    tcp_recv(pcb, &NbClient::onRecv);
+    tcp_err(pcb, &NbClient::onErr);
+    tcp_nagle_disable(pcb);
+    ip_addr_t copy = addr;
+    if (tcp_connect(pcb, &copy, port, &NbClient::onConnected) != ERR_OK) {
+      tcp_abort(pcb);
+      pcb = nullptr;
+      phase = Phase::Failed;
+      return;
+    }
+    phase = Phase::Connecting;
+    started = millis();
+  }
+
+  size_t pushRx(pbuf* p) {
+    size_t accepted = 0;
+    for (pbuf* q = p; q; q = q->next) {
+      auto* data = static_cast<const uint8_t*>(q->payload);
+      for (uint16_t i = 0; i < q->len; i++) {
+        if (rxCount >= RX_CAP) return accepted;
+        rx[rxW] = data[i];
+        rxW = (uint16_t)((rxW + 1) % RX_CAP);
+        rxCount++;
+        accepted++;
+      }
+    }
+    return accepted;
+  }
+
+  static void onDns(const char*, const ip_addr_t* ipaddr, void* arg) {
+    auto* self = static_cast<NbClient*>(arg);
+    if (!self || self->epoch != self->dnsEpoch || self->phase != Phase::Resolving) return;
+    if (!ipaddr) {
+      self->phase = Phase::Failed;
+      return;
+    }
+    self->startTcp(*ipaddr);
+  }
+
+  static err_t onConnected(void* arg, tcp_pcb*, err_t err) {
+    auto* self = static_cast<NbClient*>(arg);
+    if (!self) return ERR_OK;
+    self->phase = (err == ERR_OK) ? Phase::Up : Phase::Failed;
+    return ERR_OK;
+  }
+
+  static void onErr(void* arg, err_t) {
+    auto* self = static_cast<NbClient*>(arg);
+    if (!self) return;
+    self->pcb = nullptr;
+    self->phase = Phase::Failed;
+  }
+
+  static err_t onRecv(void* arg, tcp_pcb* tpcb, pbuf* p, err_t) {
+    auto* self = static_cast<NbClient*>(arg);
+    if (!self) {
+      if (p) pbuf_free(p);
+      return ERR_OK;
+    }
+    if (!p) {
+      self->phase = Phase::Failed;
+      return ERR_OK;
+    }
+    const size_t total = p->tot_len;
+    size_t n = self->pushRx(p);
+    if (n) tcp_recved(tpcb, n);
+    pbuf_free(p);
+    if (n < total) {
+      self->phase = Phase::Failed;
+      self->pcb = nullptr;
+      tcp_abort(tpcb);
+      return ERR_ABRT;
+    }
+    return ERR_OK;
+  }
+};
+
+static NbClient net;
+PubSubClient mqtt(net);
+
+static RemoteLamp remotes[MAX_REMOTE_LAMPS];
+static uint8_t    remoteCount = 0;
+
+static char idBuf[8] = {};
+static char clientBuf[16] = {};
+
+const char* lampId() {
+  if (!idBuf[0]) snprintf(idBuf, sizeof(idBuf), "%06x", ESP.getChipId() & 0xFFFFFFu);
+  return idBuf;
 }
 
-void setAutonomous(bool on) {
-  if (data.autonomous == on) {
-    memory.update();
-    return;
+static const char* mqttClientId() {
+  if (!clientBuf[0]) snprintf(clientBuf, sizeof(clientBuf), "lamp-%s", lampId());
+  return clientBuf;
+}
+
+static bool topicFor(const char* sub, char* out, size_t n) {
+  const String group = cfg::group();
+  if (!group.length() || !sub || !sub[0]) return false;
+  int w = snprintf(out, n, "lamp/%s/%s/%s", group.c_str(), lampId(), sub);
+  return w > 0 && (size_t)w < n;
+}
+
+static RemoteLamp* findOrCreateRemote(const char* name) {
+  for (uint8_t i = 0; i < remoteCount; i++)
+    if (strncmp(remotes[i].name, name, sizeof(remotes[i].name)) == 0)
+      return &remotes[i];
+  if (remoteCount >= MAX_REMOTE_LAMPS) return nullptr;
+  RemoteLamp& r = remotes[remoteCount++];
+  strncpy(r.name, name, sizeof(r.name) - 1);
+  r.name[sizeof(r.name) - 1] = '\0';
+  r.lastSeen = 0;
+  r.mood = 0;
+  r.dnd = false;
+  r.pir = false;
+  r.presence = Presence::Unknown;
+  return &r;
+}
+
+String mqttStatusString() {
+  if (cfg::offline()) return "Офлайн-режим";
+  if (!mqtt.connected()) return "MQTT: нет подключения";
+  String s = "Группа: " + cfg::group();
+  s += "\nID: ";
+  s += lampId();
+  if (remoteCount == 0) {
+    s += "\n(нет ламп в группе)";
+  } else {
+    for (uint8_t i = 0; i < remoteCount; i++) {
+      s += '\n';
+      s += remotes[i].online() ? "\u25cf " : "\u25cb ";
+      s += remotes[i].name;
+    }
   }
-  data.autonomous = on;
-  memory.update();
-  awayAnnounced = false;
-  awayWait = false;
-  mqttNextTry = millis();
-  mqttBackoff = MQTT_BACKOFF_START_MS;
-  peersDirty = true;
-  if (on) {
-    if (mqtt.connected()) beginAway();
-    return;
-  }
-  // Выход: если сокет ещё жив (не успели уйти), сразу online и state.
-  if (mqtt.connected()) {
-    mqtt.subscribe(subStatus, 1);
-    mqtt.subscribe(subState, 1);
-    mqtt.subscribe(subWink, 0);
-    publishOnline();
-    publishState();
+  return s;
+}
+
+static char meetingSender[20] = {};
+static bool meetingPending    = false;
+
+bool takeMeetingSignal(String& sender) {
+  if (!meetingPending) return false;
+  meetingPending = false;
+  sender = meetingSender;
+  return true;
+}
+
+// lamp/<group>/<id>/<sub> — отправитель это сегмент id, не текст между первым и последним '/'.
+static bool parseLampTopic(const String& topic, String& sender, String& subtopic) {
+  if (!topic.startsWith(F("lamp/"))) return false;
+  int s1 = topic.indexOf('/');
+  int s2 = topic.indexOf('/', s1 + 1);
+  int s3 = topic.indexOf('/', s2 + 1);
+  if (s1 < 0 || s2 < 0 || s3 < 0) return false;
+  String group = topic.substring(s1 + 1, s2);
+  if (group != cfg::group()) return false;
+  sender = topic.substring(s2 + 1, s3);
+  subtopic = topic.substring(s3 + 1);
+  return sender.length() && subtopic.length();
+}
+
+void callback(char* topic, byte* payload, uint16_t len) {
+  if (len >= 128) return;
+  char buf[128];
+  if (len) memcpy(buf, payload, len);
+  buf[len] = '\0';
+  String val(buf);
+
+  String sender;
+  String subtopic;
+  if (!parseLampTopic(String(topic), sender, subtopic)) return;
+  if (sender == lampId()) return;
+
+  RemoteLamp* remote = findOrCreateRemote(sender.c_str());
+  if (!remote) return;
+
+  if (subtopic == "heartbeat") {
+    remote->lastSeen = millis();
+    remote->pir = (val == "1");
+  } else if (subtopic == "status") {
+    if (val == "online") remote->presence = Presence::Online;
+    else if (val == "away") remote->presence = Presence::Away;
+    else if (val == "offline") remote->presence = Presence::Offline;
+  } else if (subtopic == "mood") {
+    remote->mood = (uint8_t)constrain(val.toInt(), 0, 120);
+  } else if (subtopic == "dnd") {
+    remote->dnd = (val == "1");
+  } else if (subtopic == "pomodoro") {
+    remote->dnd = val.startsWith("work");
+  } else if (subtopic == "meeting") {
+    strncpy(meetingSender, sender.c_str(), sizeof(meetingSender) - 1);
+    meetingSender[sizeof(meetingSender) - 1] = '\0';
+    meetingPending = true;
   }
 }
 
-void armMqtt() {
-  uint16_t port = data.port ? data.port : 1883;
-  const char* user = data.mqttUser[0] ? data.mqttUser : nullptr;
-  const char* pass = (user && data.mqttPass[0]) ? data.mqttPass : nullptr;
-  mqtt.setServer(mqttIP, port);
-  mqtt.setClientId(clientId);
-  mqtt.setCredentials(user, pass);
-  mqtt.setWill(topicStatus, 1, true, STATUS_OFFLINE);
-}
+static uint16_t qos1PacketId = 1;
 
-void scheduleMqttBackoff() {
-  mqttNextTry = millis() + mqttBackoff;
-  if (mqttBackoff < MQTT_BACKOFF_MAX_MS) {
-    uint32_t next = (uint32_t)mqttBackoff * 2;
-    if (next > MQTT_BACKOFF_MAX_MS) next = MQTT_BACKOFF_MAX_MS;
-    mqttBackoff = (uint16_t)next;
+// status: retained, QoS 1. PubSubClient::publish шлёт только QoS 0, пакет собирается здесь.
+// PUBACK забирает mqtt.loop() и игнорирует (тип 0x40), поток не разъезжается.
+static bool publishQos1(const char* topic, const char* payload, bool retain) {
+  if (!mqtt.connected() || !topic) return false;
+  uint16_t tlen = (uint16_t)strlen(topic);
+  uint16_t plen = payload ? (uint16_t)strlen(payload) : 0;
+  uint32_t rem = 2u + tlen + 2u + plen;
+  if (rem > 240) return false;
+
+  uint8_t pkt[256];
+  uint16_t n = 0;
+  pkt[n++] = (uint8_t)(0x30 | 0x02 | (retain ? 0x01 : 0));
+  if (rem < 128) {
+    pkt[n++] = (uint8_t)rem;
+  } else {
+    pkt[n++] = (uint8_t)((rem & 0x7F) | 0x80);
+    pkt[n++] = (uint8_t)(rem >> 7);
   }
-  if (mqttFailStreak < 250) mqttFailStreak++;
-  if (mqttFailStreak >= 3) mqttHasIP = false;  // вдруг брокер переехал
-}
-
-// 1 — адрес есть, 0 — DNS не ответил, 2 — кнопка в серии кликов, DNS не трогаем.
-int ensureMqttIP() {
-  IPAddress ip;
-  if (ip.fromString(data.host)) {
-    mqttIP = ip;
-    mqttHasIP = true;
-    return 1;
+  pkt[n++] = (uint8_t)(tlen >> 8);
+  pkt[n++] = (uint8_t)(tlen & 0xFF);
+  memcpy(pkt + n, topic, tlen);
+  n = (uint16_t)(n + tlen);
+  uint16_t pid = qos1PacketId++;
+  if (qos1PacketId == 0) qos1PacketId = 1;
+  pkt[n++] = (uint8_t)(pid >> 8);
+  pkt[n++] = (uint8_t)(pid & 0xFF);
+  if (plen) {
+    memcpy(pkt + n, payload, plen);
+    n = (uint16_t)(n + plen);
   }
-  if (mqttHasIP && (uint32_t)(millis() - mqttResolvedAt) < 10ul * 60ul * 1000ul) return 1;
-  if (btn.busy() || btn.waiting() || btn.pressing()) return 2;
-  IPAddress resolved;
-  if (!WiFi.hostByName(data.host, resolved, MQTT_DNS_TIMEOUT_MS)) {
-    DEBUG(F("DNS fail "));
-    DEBUGLN(data.host);
-    return 0;
-  }
-  mqttIP = resolved;
-  mqttHasIP = true;
-  mqttResolvedAt = millis();
-  DEBUG(F("MQTT ip "));
-  DEBUGLN(mqttIP);
-  return 1;
+  return net.write(pkt, n) == n;
 }
 
-void mqttOnWifiUp() {
-  mqttNextTry = millis();
-  mqttBackoff = MQTT_BACKOFF_START_MS;
+static bool publishStatus(const char* payload) {
+  char topic[128];
+  if (!topicFor("status", topic, sizeof(topic))) return false;
+  bool ok = publishQos1(topic, payload, true);
+  net.flush();
+  DEBUG(F("[MQTT] status "));
+  DEBUGLN(payload);
+  return ok;
 }
 
-void mqttRestart() {
-  rebuildTopics();
-  mqttHasIP = false;
-  mqttResolvedAt = 0;
-  awayAnnounced = false;
-  awayWait = false;
-  mqttFailStreak = 0;
-  mqttBackoff = MQTT_BACKOFF_START_MS;
-  mqttNextTry = millis();
-  peersClear();
-  // Грязный обрыв: брокер сам поставит offline (Last Will) на старом топике.
-  if (mqtt.connected() || mqttConnecting) {
-    mqttConnecting = false;
-    mqttHoldBackoff = true;
-    mqtt.disconnect(true);
-    mqttHoldBackoff = false;
-  }
+static void heartbeatTick() {
+  static Timer hbTmr(8000);
+  if (!hbTmr.period()) return;
+
+  char topic[128];
+  if (!topicFor("heartbeat", topic, sizeof(topic))) return;
+#if USE_PIR
+  const char* payload = pirActive() ? "1" : "0";
+#else
+  const char* payload = "0";
+#endif
+  mqtt.publish(topic, payload, true);
+  DEBUGLN(F("[MQTT] heartbeat sent"));
 }
 
-void onMqttConnect(bool sessionPresent) {
-  (void)sessionPresent;
-  mqttConnecting = false;
-  mqttFailStreak = 0;
-  mqttBackoff = MQTT_BACKOFF_START_MS;
-  DEBUG(F("MQTT connected, heap "));
-  DEBUGLN(ESP.getFreeHeap());
-  if (data.autonomous) {
-    beginAway();
-    return;
-  }
-  mqtt.subscribe(subStatus, 1);
-  mqtt.subscribe(subState, 1);
-  mqtt.subscribe(subWink, 0);
-  publishOnline();
-  publishState();
-  peersDirty = true;
+static uint32_t nextAttempt = 0;
+static uint32_t backoffMs = 2000;
+static bool awayAnnounced = false;
+
+static void armBackoff() {
+  nextAttempt = millis() + backoffMs;
+  backoffMs = (backoffMs < 15000UL) ? backoffMs * 2 : 30000UL;
+  if (backoffMs > 30000UL) backoffMs = 30000UL;
 }
 
-void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
-  mqttConnecting = false;
-  awayWait = false;
-  DEBUG(F("MQTT down "));
-  DEBUGLN((int)reason);
-  // Ожидаемый уход в away: чужие статусы не обнуляем, просто больше не слушаем.
-  if (data.autonomous && awayAnnounced) {
-    peersDirty = true;
-    return;
-  }
-  peersDropOnline();
-  if (mqttHoldBackoff) return;
-  scheduleMqttBackoff();
+static bool handshake() {
+  static char willTopic[128];
+  if (!topicFor("status", willTopic, sizeof(willTopic))) return false;
+
+  String host = cfg::host();
+  static char hostCopy[64];
+  strncpy(hostCopy, host.c_str(), sizeof(hostCopy) - 1);
+  hostCopy[sizeof(hostCopy) - 1] = '\0';
+  mqtt.setServer(hostCopy, cfg::port());
+  mqtt.setSocketTimeout(1);
+
+  String user = cfg::mqttUser();
+  String pass = cfg::mqttPass();
+  net.setAppPump(true);
+  bool ok = user.length()
+      ? mqtt.connect(mqttClientId(), user.c_str(), pass.c_str(), willTopic, 1, true, "offline")
+      : mqtt.connect(mqttClientId(), willTopic, 1, true, "offline");
+  net.setAppPump(false);
+  return ok;
 }
 
-void onMqttPublish(uint16_t packetId) {
-  if (!awayWait || packetId != awayPkt) return;
-  awayWait = false;
-  if (!data.autonomous) return;
-  // PUBACK на retained away: теперь чистое DISCONNECT, чтобы Last Will
-  // не затёр away словом offline.
-  awayAnnounced = true;
-  mqtt.disconnect(false);
-  peersDirty = true;
-}
-
-void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties properties,
-                   size_t len, size_t index, size_t total) {
-  (void)properties;
-  if (index != 0 || len != total || total >= 160 || !topic) return;
-
-  char top[80];
-  strncpy(top, topic, sizeof(top) - 1);
-  top[sizeof(top) - 1] = '\0';
-
-  TopicParts parts;
-  if (!parseLampTopic(top, &parts)) return;
-  if (strcmp(parts.group, data.group) != 0) return;
-  if (sameLampId(parts.id, lampId)) return;
-
-  char body[160];
-  memcpy(body, payload, len);
-  body[len] = '\0';
-
-  if (strcmp(parts.leaf, "status") == 0) {
-    rememberStatus(parts.id, parseStatusPayload(body));
-  } else if (strcmp(parts.leaf, "state") == 0) {
-    uint8_t mood = 0;
-    char name[32];
-    if (!parseStatePayload(body, &mood, name, sizeof(name))) return;
-    rememberState(parts.id, mood, name);
-  } else if (strcmp(parts.leaf, "wink") == 0) {
-    if (data.autonomous) return;
-    uint8_t hue = 0;
-    if (!parseWinkPayload(body, &hue)) return;
-    winkFrom(hue);
-  }
+static void subscribeGroup() {
+  String topic = String(F("lamp/")) + cfg::group() + F("/+/#");
+  mqtt.subscribe(topic.c_str());
+  DEBUG(F("[MQTT] subscribed: "));
+  DEBUGLN(topic);
 }
 
 void mqttBegin() {
-  formatChipId(ESP.getChipId(), lampId);
-  buildClientId(clientId, sizeof(clientId), lampId);
-  snprintf(deviceHost, sizeof(deviceHost), "companylamp-%s", lampId);
-  rebuildTopics();
-
-  mqtt.setCleanSession(true);
+  mqtt.setCallback(callback);
   mqtt.setKeepAlive(15);
-  mqtt.setMaxTopicLength(80);
-  mqtt.onConnect(onMqttConnect);
-  mqtt.onDisconnect(onMqttDisconnect);
-  mqtt.onMessage(onMqttMessage);
-  mqtt.onPublish(onMqttPublish);
-
-  // Уже были автономны до выключения: после Wi-Fi ещё раз скажем away.
-  awayAnnounced = false;
-  DEBUG(F("id "));
-  DEBUGLN(lampId);
+  mqtt.setSocketTimeout(1);
+  mqtt.setBufferSize(512);
 }
 
 void mqttTick() {
-  static uint32_t peerShown = 0;
-  if (peersDirty || (uint32_t)(millis() - peerShown) > 1000) {
-    rebuildPeerText();
-    peerShown = millis();
-  }
-
-  if (!brokerConfigured()) {
-    if (mqtt.connected() || mqttConnecting) {
-      mqttConnecting = false;
-      mqtt.disconnect(true);
-    }
-    return;
-  }
+  const bool offline = cfg::offline();
+  if (!offline) awayAnnounced = false;
 
   if (WiFi.status() != WL_CONNECTED) {
-    if (mqtt.connected() || mqttConnecting) {
-      mqttConnecting = false;
-      mqtt.disconnect(true);
+    // Сессия рвётся без DISCONNECT, чтобы брокер опубликовал LWT offline.
+    if (!net.isIdle()) {
+      net.stop();
+      mqtt.connected();
     }
     return;
   }
 
-  if (awayWait && (uint32_t)(millis() - awayWaitSince) > 3000) {
-    // PUBACK не пришёл. Пакет уже стоял в очереди перед DISCONNECT,
-    // брокер обычно успевает записать retained away.
-    awayWait = false;
-    if (data.autonomous) {
+  if (offline && awayAnnounced) {
+    if (mqtt.connected()) mqtt.disconnect();
+    return;
+  }
+
+  if (!cfg::group().length() || !cfg::host().length()) return;
+
+  if (mqtt.connected()) {
+    if (offline) {
+      publishStatus("away");
+      mqtt.disconnect();
       awayAnnounced = true;
-      mqtt.disconnect(false);
+      return;
+    }
+    heartbeatTick();
+    mqtt.loop();
+    return;
+  }
+
+  if (net.isPending()) {
+    if (net.timedOut()) {
+      net.stop();
+      armBackoff();
     }
     return;
   }
+  if (btn.busy()) return;
+  if ((int32_t)(millis() - nextAttempt) < 0) return;
 
-  if (data.autonomous && awayAnnounced && !mqtt.connected() && !mqttConnecting) return;
-
-  if (mqttConnecting && (uint32_t)(millis() - mqttConnectStarted) > 20000) {
-    mqtt.disconnect(true);
-    mqttConnecting = false;
+  if (!net.isUp()) {
+    if (net.isFailed()) {
+      net.stop();
+      armBackoff();
+      return;
+    }
+    if (!net.begin(cfg::host().c_str(), cfg::port())) armBackoff();
     return;
   }
 
-  if (mqtt.connected() || mqttConnecting || awayWait) return;
-  if ((int32_t)(millis() - mqttNextTry) < 0) return;
-
-  int resolved = ensureMqttIP();
-  if (resolved == 2) {
-    mqttNextTry = millis() + 250;
-    return;
-  }
-  if (resolved == 0) {
-    scheduleMqttBackoff();
+  if (!handshake()) {
+    DEBUGLN(F("[MQTT] connect failed"));
+    net.stop();
+    armBackoff();
     return;
   }
 
-  armMqtt();
-  mqttConnecting = true;
-  mqttConnectStarted = millis();
-  DEBUG(F("MQTT connect "));
-  DEBUGLN(data.host);
-  mqtt.connect();
+  DEBUGLN(F("[MQTT] connected"));
+  backoffMs = 2000;
+  nextAttempt = 0;
+  subscribeGroup();
+  if (offline) {
+    publishStatus("away");
+    mqtt.disconnect();
+    awayAnnounced = true;
+  } else {
+    publishStatus("online");
+  }
 }
+
+uint8_t mqttRemoteCount() { return remoteCount; }
+const RemoteLamp& mqttRemote(uint8_t i) { return remotes[i]; }
+
+static bool publishSub(const char* sub, const char* payload, bool retain) {
+  if (!mqtt.connected() || cfg::offline()) return false;
+  char topic[128];
+  if (!topicFor(sub, topic, sizeof(topic))) return false;
+  return mqtt.publish(topic, payload, retain);
+}
+
+void publishMood(uint8_t hue) {
+  char payload[8];
+  snprintf(payload, sizeof(payload), "%u", (unsigned)hue);
+  publishSub("mood", payload, true);
+}
+
+void publishDND(bool active) {
+  publishSub("dnd", active ? "1" : "0", true);
+}
+
+void publishMeeting() {
+  publishSub("meeting", cfg::local().c_str(), false);
+}
+
+void publishPomodoro(const char* state) {
+  publishSub("pomodoro", state, true);
+}
+
+#if USE_PIR
+static uint32_t pirHoldUntil = 0;
+
+bool pirActive() {
+  if (digitalRead(PIR_PIN)) pirHoldUntil = millis() + 60000UL;
+  return (int32_t)(pirHoldUntil - millis()) > 0;
+}
+#endif

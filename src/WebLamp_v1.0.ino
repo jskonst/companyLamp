@@ -1,142 +1,136 @@
 /*
-  companyLamp — группа ламп на ESP8266 (Wemos D1 mini).
-  Протокол: docs/protocol.md (топики lamp/<group>/..., настроение, среднее, away).
-
-  Пины:
-    лента WS2812 — GPIO14 / D5
-    кнопка       — GPIO16 / D0, BTN_LEVEL 1, внешний подтяг к GND
-    PIR          — D6 / GPIO12, USE_PIR 0. В групповом протоколе PIR не передаётся.
-
-  Жесты кнопки — константы GESTURE_* в include/group_logic.h.
+  WebLamp (cleaned build)
 */
 
-#define LED_PIN 14
-#define BTN_PIN 16
-#define PIR_PIN D6
-#define LED_AMOUNT 24
-#define BTN_LEVEL 1
+#include "mode.h"          // Mode enum must be visible before auto-generated prototypes
+
+#define LED_PIN 5          // strip data pin (D1 / GPIO5)
+#define BTN_PIN 14         // button pin (D5 / GPIO14)
+#define PIR_PIN D6         // PIR pin (GPIO12)
+#define LED_AMOUNT 24      // number of LEDs
+#define BTN_LEVEL 1        // 1: button to VCC, 0: button to GND
+#define SERIAL_BTN_TEST 0  // 1: enable Serial simulation in buttonSerialTestTick()
+#define WIFI_SLEEP_CFG WIFI_MODEM_SLEEP  // WIFI_NONE_SLEEP / WIFI_MODEM_SLEEP / WIFI_LIGHT_SLEEP
+#define BTN_CLICK_TIMEOUT 650            // ms window for multi-click detection
+#define BTN_DEBOUNCE_TIME 25             // ms debounce for mechanical button
 #define USE_PIR 0
+#define IGNORE_PIR 0
 
-// Сколько чужих ламп помним. Вместе с собой это 20 — потолок группы.
-#define PEER_MAX 19
+// Максимум ламп в группе. RemoteLamp ≈ 28 байт, итого N×28 байт статической RAM.
+// При увеличении сверх 20 проверьте свободную память (сейчас ~50 KB свободно).
+#define MAX_REMOTE_LAMPS 20
 
-// Пауза перед повтором MQTT и потолок. TCP к мёртвому брокеру не блокирует loop
-// (см. комментарий в mqtt.ino); эти паузы лишь не дают долбить брокер.
-#define MQTT_BACKOFF_START_MS 2000u
-#define MQTT_BACKOFF_MAX_MS 30000u
+#define MQTT_HEADER "GWL:"
 
-#ifndef LAMP_OTA_PASS
-#define LAMP_OTA_PASS "companylamp"
-#endif
-static_assert(sizeof(LAMP_OTA_PASS) > 1, "LAMP_OTA_PASS не должен быть пустым");
-
-#ifndef MQTT_DNS_TIMEOUT_MS
-#define MQTT_DNS_TIMEOUT_MS 500
-#endif
-
-#include <ArduinoOTA.h>
-#include <AsyncMqttClient.h>
-#include <DNSServer.h>
-#include <EEPROM.h>
-#include <EEManager.h>
 #include <ESP8266WiFi.h>
+#include "led_driver.h"
+#define EB_STEP_TIME 100
 #include <EncButton.h>
-#include <FastLED.h>
-#include <GyverPortal.h>
-
 #include "Timer.h"
-#include "group_logic.h"
+#include "sets.h"
+#include "mqtt.h"
 
-#define DEBUG(x) Serial.print(x)
-#define DEBUGLN(x) Serial.println(x)
+#define DEBUG_ENABLE 1
+#if DEBUG_ENABLE
+  #define DEBUG(x) Serial.print(x)
+  #define DEBUGLN(x) Serial.println(x)
+#else
+  #define DEBUG(x)
+  #define DEBUGLN(x)
+#endif
 
-// Образ EEPROM. Ключ EEManager ('b' в startup) не совпадает со старой парой —
-// при прошивке поверх ключа 'a' настройки сбрасываются на эти значения.
-// Поле добавили или поменяли местами — поднимите ключ, иначе EEManager прочитает мусор.
-struct LampData {
-  char ssid[32] = "";
-  char pass[32] = "";
-  char group[21] = "";       // пусто = только локально
-  char host[32] = "";        // пусто = брокер не настроен, публичного брокера больше нет
-  uint16_t port = 1883;
-  char mqttUser[32] = "";
-  char mqttPass[32] = "";
-  char owner[32] = "";       // необязательное имя в state.n
-  char apPass[32] = "";      // пароль точки; пусто = взять LAMP_AP_PASS или открытую сеть
-  uint8_t ip[4] = {0, 0, 0, 0};
-  bool power = true;
-  uint8_t bright = 50;
-  uint8_t mood = 50;         // 0 красный … 50 жёлтый … 100 зелёный
-  bool average = false;      // false = мой цвет, true = среднее группы
-  bool autonomous = false;
-};
-
-struct Peer {
-  char id[7];
-  char name[32];
-  uint8_t mood;
-  PeerStatus status;
-  bool hasMood;
-};
-
-LampData data;
-EEManager memory(data);
-// ButtonT, не EncButtonT: у EncButtonT три параметра — это пины энкодера и кнопки,
-// EncButtonT<16, 0, 0> читал бы GPIO0. Кнопка лампы — GPIO16, уровень 1, без внутренней подтяжки.
-ButtonT<BTN_PIN> btn(INPUT, BTN_LEVEL);
+// GPIO16 on ESP8266 supports dedicated pulldown mode.
+// For BTN_LEVEL=1 (button to VCC) this keeps input stable without external resistor.
+#if (BTN_PIN == 16) && (BTN_LEVEL == 1)
+constexpr uint8_t BTN_PIN_MODE = INPUT_PULLDOWN_16;
+#elif (BTN_LEVEL == 0)
+constexpr uint8_t BTN_PIN_MODE = INPUT_PULLUP;
+#else
+constexpr uint8_t BTN_PIN_MODE = INPUT;
+#endif
+ButtonT<BTN_PIN> btn(BTN_PIN_MODE, BTN_LEVEL);
 CRGB leds[LED_AMOUNT];
-GyverPortal portal;
-DNSServer dns;
-AsyncMqttClient mqtt;
 
-char lampId[7];
-char clientId[16];
-char deviceHost[24];
-char topicStatus[48];
-char topicState[48];
-char topicWink[48];
-char subStatus[40];
-char subState[40];
-char subWink[40];
+#if SERIAL_BTN_TEST
+bool serialVisualOverride = false;
+uint32_t serialVisualOverrideUntil = 0;
+#endif
 
-Peer peers[PEER_MAX];
-int peerCount = 0;
-char peerText[640];
-int onlineCount = 0;
-bool peersDirty = true;
+void showLedsSafe() {
+  noInterrupts();
+  FastLED.show();
+  interrupts();
+}
 
-bool apActive = false;
-char portalNote[120];
+static bool lampStateCacheInitialized = false;
+static bool lampStateLastPower = false;
+static uint8_t lampStateLastBright = 0;
+static uint8_t lampStateLastColor = 255;
 
-uint32_t winkStartMs = 0;
-uint8_t winkHue = 0;
-uint32_t maxFlashMs = 0;
+void invalidateLampStateCache() {
+  lampStateCacheInitialized = false;
+}
 
-bool mqttConnecting = false;
-bool mqttHasIP = false;
-bool awayAnnounced = false;
-bool awayWait = false;
-uint16_t awayPkt = 0;
-uint32_t awayWaitSince = 0;
-uint32_t mqttConnectStarted = 0;
-uint32_t mqttNextTry = 0;
-uint16_t mqttBackoff = MQTT_BACKOFF_START_MS;
-uint8_t mqttFailStreak = 0;
-bool mqttHoldBackoff = false;
-uint32_t mqttResolvedAt = 0;
-IPAddress mqttIP;
+void applyLampState() {
+  bool power = sett_started() ? cfg::power() : true;
+  uint8_t bright = sett_started() ? cfg::bright() : 20;
+  uint8_t color = sett_started() ? cfg::color() : 0;
+
+  if (lampStateCacheInitialized &&
+      power == lampStateLastPower &&
+      bright == lampStateLastBright &&
+      color == lampStateLastColor) {
+    return;
+  }
+
+  lampStateLastPower = power;
+  lampStateLastBright = bright;
+  lampStateLastColor = color;
+  lampStateCacheInitialized = true;
+
+  CRGB c;
+  if (!power) c = CRGB::Black;
+  else if (color == 0) c = CRGB::White;
+  else c = CHSV(color, 255, 255);
+
+  fill_solid(leds, LED_AMOUNT, c);
+  if (!power) {
+    FastLED.setBrightness(0);
+    showLedsSafe();
+    delayMicroseconds(80);
+    showLedsSafe();
+  } else {
+    FastLED.setBrightness(map(bright, 0, 100, 0, 255));
+    showLedsSafe();
+  }
+}
 
 void setup() {
   startup();
+  mqttBegin();
 }
 
 void loop() {
-  ArduinoOTA.handle();
-  wifiTick();
-  memory.tick();
-  animation();
+#if SERIAL_BTN_TEST
+  buttonSerialTestTick();
+#endif
   buttonTick();
+  wifiMaintain();
+  sett_loop();
   mqttTick();
-  portal.tick();
-  checkPortal();
+  otaTick();
+  meetingTick();
+  pomodoroTick();
+  pomodoroWebTick();
+  modeWebTick();
+  modeIndicatorTick();
+
+#if SERIAL_BTN_TEST
+  if (serialVisualOverride && (int32_t)(millis() - serialVisualOverrideUntil) >= 0) {
+    serialVisualOverride = false;
+  }
+  if (!serialVisualOverride) renderTick();
+#else
+  renderTick();
+#endif
 }
