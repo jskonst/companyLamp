@@ -1,110 +1,142 @@
 /*
-  Скетч к проекту "WebLamp"
-  - Страница проекта (схемы, описания): https://alexgyver.ru/weblamp/
-  - Исходники на GitHub: https://github.com/AlexGyver/WebLamp
-  Проблемы с загрузкой? Читай гайд для новичков: https://alexgyver.ru/arduino-first/
-  AlexGyver, AlexGyver Technologies, 2022
+  companyLamp — группа ламп на ESP8266 (Wemos D1 mini).
+  Протокол: docs/protocol.md (топики lamp/<group>/..., настроение, среднее, away).
 
-  1.0 - релиз
+  Пины:
+    лента WS2812 — GPIO14 / D5
+    кнопка       — GPIO16 / D0, BTN_LEVEL 1, внешний подтяг к GND
+    PIR          — D6 / GPIO12, USE_PIR 0. В групповом протоколе PIR не передаётся.
+
+  Жесты кнопки — константы GESTURE_* в include/group_logic.h.
 */
 
-#define LED_PIN 14    // пин ленты
-#define BTN_PIN 16    // пин кнопки
-#define PIR_PIN D6    // пин PIR (ИК датчика): D6 = GPIO12. НЕ D5 — D5 = GPIO14 = данные ленты (LED_PIN)
-#define LED_AMOUNT 24 // кол-вл светодиодов
-#define BTN_LEVEL 1   // 1 - кнопка подключает VCC, 0 - подключает GND
-#define USE_PIR 0     // 1 - использовать PIR (ИК датчик) на этой лампе; по умолчанию выключен
-#define IGNORE_PIR 0  // 1 - игнорировать сигнал PIR (ИК датчика) с удалённой лампы
+#define LED_PIN 14
+#define BTN_PIN 16
+#define PIR_PIN D6
+#define LED_AMOUNT 24
+#define BTN_LEVEL 1
+#define USE_PIR 0
 
-/*
-  Запуск (не блокирует — лампа управляется всегда):
-  - Есть сохранённая сеть: подключаемся в фоне. Если за 15 с нет IP
-    или связь пропала — поднимается точка доступа WLamp-XXXXXX (192.168.4.1).
-  - Нет сохранённой сети: точка доступа сразу.
-  - Клик в первые 2 с после включения: принудительно включить точку доступа.
-  - Пока работает точка, раз в 30 с пробуем снова подключиться к роутеру.
-    Через 60 с стабильного STA без клиентов точка выключается.
+// Сколько чужих ламп помним. Вместе с собой это 20 — потолок группы.
+#define PEER_MAX 19
 
-  Анимация при старте: 2 с мигает зелёным (окно для клика).
+// Пауза перед повтором MQTT и потолок. TCP к мёртвому брокеру не блокирует loop
+// (см. комментарий в mqtt.ino); эти паузы лишь не дают долбить брокер.
+#define MQTT_BACKOFF_START_MS 2000u
+#define MQTT_BACKOFF_MAX_MS 30000u
 
-  Работа:
-  1 клик: вкл/выкл
-  2 клика: сменить цвет
-  3 клика: подмигнуть
-  Удержание: сменить яркость
-*/
+#ifndef LAMP_OTA_PASS
+#define LAMP_OTA_PASS "companylamp"
+#endif
+static_assert(sizeof(LAMP_OTA_PASS) > 1, "LAMP_OTA_PASS не должен быть пустым");
 
-// ============= ВСЯКОЕ =============
-#define MQTT_HEADER "GWL:"  // заголовок пакета данных
-
-// ============= БИБЛЫ =============
-#include <EEPROM.h>
-#include <ESP8266WiFi.h>
-#include <DNSServer.h>
-#include <GyverPortal.h>
-#include <EEManager.h>
-#include <PubSubClient.h>
-#include <FastLED.h>
-#define EB_STEP 100   // период step шага кнопки
-#include <EncButton.h>
-#include "Timer.h"
-
-
-// ============= ДАННЫЕ =============
-#if 1
-#define DEBUG(x) Serial.print(x)
-#define DEBUGLN(x) Serial.println(x)
-#else
-#define DEBUG(x)
-#define DEBUGLN(x)
+#ifndef MQTT_DNS_TIMEOUT_MS
+#define MQTT_DNS_TIMEOUT_MS 500
 #endif
 
+#include <ArduinoOTA.h>
+#include <AsyncMqttClient.h>
+#include <DNSServer.h>
+#include <EEPROM.h>
+#include <EEManager.h>
+#include <ESP8266WiFi.h>
+#include <EncButton.h>
+#include <FastLED.h>
+#include <GyverPortal.h>
+
+#include "Timer.h"
+#include "group_logic.h"
+
+#define DEBUG(x) Serial.print(x)
+#define DEBUGLN(x) Serial.println(x)
+
+// Образ EEPROM. Ключ EEManager ('b' в startup) не совпадает со старой парой —
+// при прошивке поверх ключа 'a' настройки сбрасываются на эти значения.
+// Поле добавили или поменяли местами — поднимите ключ, иначе EEManager прочитает мусор.
 struct LampData {
   char ssid[32] = "";
   char pass[32] = "";
-  char local[20] = "AG_lamp_1";
-  char remote[20] = "AG_lamp_2";
-  char host[32] = "broker.mqttdashboard.com";
+  char group[21] = "";       // пусто = только локально
+  char host[32] = "";        // пусто = брокер не настроен, публичного брокера больше нет
   uint16_t port = 1883;
+  char mqttUser[32] = "";
+  char mqttPass[32] = "";
+  char owner[32] = "";       // необязательное имя в state.n
+  char apPass[32] = "";      // пароль точки; пусто = взять LAMP_AP_PASS или открытую сеть
   uint8_t ip[4] = {0, 0, 0, 0};
-
-  bool power = 1;
+  bool power = true;
   uint8_t bright = 50;
-  uint8_t color = 0;
+  uint8_t mood = 50;         // 0 красный … 50 жёлтый … 100 зелёный
+  bool average = false;      // false = мой цвет, true = среднее группы
+  bool autonomous = false;
+};
+
+struct Peer {
+  char id[7];
+  char name[32];
+  uint8_t mood;
+  PeerStatus status;
+  bool hasMood;
 };
 
 LampData data;
-EncButtonT<BTN_PIN, 0, 0> btn;
-CRGB leds[LED_AMOUNT];
-WiFiClient espClient;
-PubSubClient mqtt(espClient);
-GyverPortal portal;
 EEManager memory(data);
+// ButtonT, не EncButtonT: у EncButtonT три параметра — это пины энкодера и кнопки,
+// EncButtonT<16, 0, 0> читал бы GPIO0. Кнопка лампы — GPIO16, уровень 1, без внутренней подтяжки.
+ButtonT<BTN_PIN> btn(INPUT, BTN_LEVEL);
+CRGB leds[LED_AMOUNT];
+GyverPortal portal;
+DNSServer dns;
+AsyncMqttClient mqtt;
 
-DNSServer dns;          // captive DNS для точки доступа
-bool apActive = false;  // поднята ли точка доступа
-bool pirFlag = 0;
-bool winkFlag = 0;
-bool startFlag = 0;
-const uint8_t hLen = strlen(MQTT_HEADER);
+char lampId[7];
+char clientId[16];
+char deviceHost[24];
+char topicStatus[48];
+char topicState[48];
+char topicWink[48];
+char subStatus[40];
+char subState[40];
+char subWink[40];
 
-Timer onlineTmr(18000, false);  // 18 секунд таймаут онлайна
-Timer pirTmr(60000, false);     // 1 минута таймаут пира
-Timer hbTmr(8000);              // 8 секунд период отправки пакета
+Peer peers[PEER_MAX];
+int peerCount = 0;
+char peerText[640];
+int onlineCount = 0;
+bool peersDirty = true;
+
+bool apActive = false;
+char portalNote[120];
+
+uint32_t winkStartMs = 0;
+uint8_t winkHue = 0;
+uint32_t maxFlashMs = 0;
+
+bool mqttConnecting = false;
+bool mqttHasIP = false;
+bool awayAnnounced = false;
+bool awayWait = false;
+uint16_t awayPkt = 0;
+uint32_t awayWaitSince = 0;
+uint32_t mqttConnectStarted = 0;
+uint32_t mqttNextTry = 0;
+uint16_t mqttBackoff = MQTT_BACKOFF_START_MS;
+uint8_t mqttFailStreak = 0;
+bool mqttHoldBackoff = false;
+uint32_t mqttResolvedAt = 0;
+IPAddress mqttIP;
 
 void setup() {
-  startup();      // запускаем всё
+  startup();
 }
 
 void loop() {
-  if (USE_PIR && digitalRead(PIR_PIN)) pirFlag = 1;  // опрос ИК датчика
-  
-  heartbeat();    // отправляем пакет что мы онлайн
-  wifiTick();     // STA реконнект + управление точкой доступа (не блокирует)
-  memory.tick();  // проверяем обновление настроек
-  animation();    // эффект ленты
-  buttonTick();   // действия кнопки
-  mqttTick();     // проверяем входящие
-  portal.tick();  // веб-интерфейс работает и по STA, и по точке доступа
-  checkPortal();  // проверяем действия
+  ArduinoOTA.handle();
+  wifiTick();
+  memory.tick();
+  animation();
+  buttonTick();
+  mqttTick();
+  portal.tick();
+  checkPortal();
 }
